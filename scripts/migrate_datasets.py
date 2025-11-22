@@ -32,11 +32,11 @@ def setup_directories():
 def move_fer2013():
     """Move FER2013 dataset from Desktop/archive to data/raw/fer2013/"""
     print("\n📂 Processing FER2013 dataset (archive)...")
-    
+
     if not FER2013_ARCHIVE.exists():
         print(f"❌ FER2013 archive not found at: {FER2013_ARCHIVE}")
         return False
-    
+
     # Check if it's a zip file
     if FER2013_ARCHIVE.suffix == '.zip':
         print(f"  Extracting {FER2013_ARCHIVE}...")
@@ -54,11 +54,11 @@ def move_fer2013():
             else:
                 shutil.copy2(item, dest)
                 print(f"  ✓ Copied file: {item.name}")
-    
+
     # Verify structure
     expected_dirs = ["train", "test", "val"]
     found_dirs = [d.name for d in FER2013_TARGET.iterdir() if d.is_dir()]
-    
+
     if any(exp in found_dirs for exp in expected_dirs):
         print(f"✅ FER2013 dataset ready at: {FER2013_TARGET}")
         print(f"   Found subdirectories: {', '.join(found_dirs)}")
@@ -71,11 +71,11 @@ def move_fer2013():
 def move_ravdess():
     """Move RAVDESS dataset from Desktop/archive-2 to data/raw/ravdess/"""
     print("\n📂 Processing RAVDESS dataset (archive-2)...")
-    
+
     if not RAVDESS_ARCHIVE.exists():
         print(f"❌ RAVDESS archive not found at: {RAVDESS_ARCHIVE}")
         return False
-    
+
     # Check if it's a zip file
     if RAVDESS_ARCHIVE.suffix == '.zip':
         print(f"  Extracting {RAVDESS_ARCHIVE}...")
@@ -88,7 +88,7 @@ def move_ravdess():
             dest = RAVDESS_TARGET / item.name
             shutil.copy2(item, dest)
             print(f"  ✓ Copied: {item.name}")
-    
+
     # Count audio files
     wav_files = list(RAVDESS_TARGET.glob('*.wav'))
     if wav_files:
@@ -109,14 +109,14 @@ def main():
     print(f"\nTarget location:")
     print(f"  {DATA_RAW}")
     print("\n" + "=" * 70)
-    
+
     # Create directories
     setup_directories()
-    
+
     # Move datasets
     fer_success = move_fer2013()
     ravdess_success = move_ravdess()
-    
+
     # Summary
     print("\n" + "=" * 70)
     print("MIGRATION SUMMARY")
@@ -124,7 +124,7 @@ def main():
     print(f"FER2013:  {'✅ Success' if fer_success else '❌ Failed'}")
     print(f"RAVDESS:  {'✅ Success' if ravdess_success else '❌ Failed'}")
     print("=" * 70)
-    
+
     if fer_success and ravdess_success:
         print("\n🎉 All datasets migrated successfully!")
         print("\nNext steps:")
