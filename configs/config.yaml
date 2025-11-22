@@ -1,33 +1,32 @@
 model:
-  type: "fusion"
+  type: 'fusion'
   audio_model:
-    type: "CNN"
+    type: 'CNN'
     parameters:
       num_layers: 3
       dropout_rate: 0.5
   video_model:
-    type: "CNN"
+    type: 'CNN'
     parameters:
       num_layers: 3
       dropout_rate: 0.5
-  # text_model removed (project uses audio + video modalities only)
 
 data:
   paths:
     raw:
-      audio: "data/raw/audio/"
-      video: "data/raw/video/"
-      # text: "data/raw/text/"  # removed
+      audio: 'data/raw/audio/'
+      video: 'data/raw/video/'
+      fer2013: 'data/raw/fer2013/'
+      ravdess: 'data/raw/ravdess/'
     processed:
-      audio: "data/processed/audio/"
-      video: "data/processed/video/"
-      # text: "data/processed/text/"  # removed
+      audio: 'data/processed/audio/'
+      video: 'data/processed/video/'
 
 training:
   batch_size: 32
   learning_rate: 0.001
   num_epochs: 50
-  optimizer: "adam"
+  optimizer: 'adam'
 
 evaluation:
   metrics:
@@ -37,5 +36,5 @@ evaluation:
     - f1_score
 
 logging:
-  level: "info"
-  save_dir: "models/checkpoints/"
+  level: 'info'
+  save_dir: 'models/checkpoints/'

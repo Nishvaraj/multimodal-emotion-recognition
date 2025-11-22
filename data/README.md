@@ -1,22 +1,22 @@
 # Dataset Documentation for Multi-Modal Emotion Recognition Project
 
-This directory contains the datasets used for the multi-modal emotion recognition project. The datasets are organized into two main categories: raw and processed.
+This directory contains the datasets used for the multi-modal emotion recognition project (facial and speech modalities only). The datasets are organized into two main categories: raw and processed.
 
 ## Raw Datasets
 
 The `raw` directory includes the original datasets that have not been altered or processed. It contains the following subdirectories:
 
-- **audio**: Contains raw audio files used for emotion recognition.
-- **video**: Contains raw video files used for emotion recognition.
-- **text**: Contains raw text data (e.g., transcripts, captions) used for emotion recognition.
+- **audio**: Contains raw audio files (RAVDESS) used for speech emotion recognition.
+- **video**: Contains raw video files used for facial emotion recognition.
+- **fer2013**: FER2013 facial expression dataset with train/test/val splits.
+- **ravdess**: RAVDESS audio-visual emotion dataset.
 
 ## Processed Datasets
 
 The `processed` directory includes datasets that have been preprocessed and are ready for use in model training. It contains the following subdirectories:
 
-- **audio**: Contains processed audio files, which may include features extracted from the raw audio.
-- **video**: Contains processed video files, which may include resized frames or extracted features.
-- **text**: Contains processed text data, which may include tokenized and vectorized representations.
+- **audio**: Contains processed audio files, which may include MFCC features and spectrograms extracted from raw audio.
+- **video**: Contains processed video files, which may include resized frames, face crops, and extracted facial features.
 
 ## Usage
 
