@@ -1,0 +1,23 @@
+name: multimodal-emotion-recognition
+channels:
+  - defaults
+dependencies:
+  - python=3.8
+  - numpy
+  - pandas
+  - scikit-learn
+  - tensorflow
+  - keras
+  - opencv
+  - librosa
+  - matplotlib
+  - seaborn
+  - jupyter
+  - pyyaml
+  - tqdm
+  - ffmpeg
+  - pip
+  - pip:
+      - torch
+      - torchvision
+      - torchaudio
