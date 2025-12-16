@@ -50,7 +50,7 @@ def check_git_config():
     print("\n" + "=" * 60)
     print("GIT CONFIGURATION")
     print("=" * 60)
-    
+
     # Check user name
     returncode, username, _ = run_command("git config user.name")
     if returncode == 0 and username.strip():
@@ -58,7 +58,7 @@ def check_git_config():
     else:
         print("⚠️  User name not set")
         print("   Set with: git config user.name 'Your Name'")
-    
+
     # Check user email
     returncode, email, _ = run_command("git config user.email")
     if returncode == 0 and email.strip():
@@ -72,11 +72,11 @@ def check_git_status():
     print("\n" + "=" * 60)
     print("GIT STATUS")
     print("=" * 60)
-    
+
     returncode, stdout, stderr = run_command("git status")
     if returncode == 0:
         print(stdout)
-        
+
         # Check for untracked/modified files
         if "nothing to commit" in stdout:
             print("✅ Working directory clean")
@@ -96,7 +96,7 @@ def check_commit_history():
     print("\n" + "=" * 60)
     print("COMMIT HISTORY")
     print("=" * 60)
-    
+
     returncode, stdout, stderr = run_command("git log --oneline -10")
     if returncode == 0 and stdout.strip():
         lines = stdout.strip().split('\n')
@@ -115,13 +115,13 @@ def check_gitignore():
     print("\n" + "=" * 60)
     print("GITIGNORE CHECK")
     print("=" * 60)
-    
+
     gitignore = Path(".gitignore")
     if gitignore.exists():
         with open(gitignore, 'r') as f:
             lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
         print(f"✅ .gitignore exists with {len(lines)} rules")
-        
+
         # Check for critical patterns
         critical_patterns = [
             "__pycache__",
@@ -131,17 +131,17 @@ def check_gitignore():
             "node_modules/",
             "*.log"
         ]
-        
+
         missing = []
         for pattern in critical_patterns:
             if not any(pattern in line for line in lines):
                 missing.append(pattern)
-        
+
         if missing:
             print(f"\n⚠️  Consider adding these patterns:")
             for pattern in missing:
                 print(f"   {pattern}")
-        
+
         return True
     else:
         print("❌ .gitignore not found")
@@ -159,7 +159,7 @@ def check_remote():
     print("\n" + "=" * 60)
     print("REMOTE REPOSITORY")
     print("=" * 60)
-    
+
     returncode, stdout, stderr = run_command("git remote -v")
     if returncode == 0 and stdout.strip():
         print("✅ Remote configured:\n")
@@ -178,7 +178,7 @@ def suggest_next_steps(has_commits, is_clean):
     print("\n" + "=" * 60)
     print("RECOMMENDED NEXT STEPS")
     print("=" * 60)
-    
+
     if not has_commits:
         print("1️⃣  Create initial commit:")
         print("    git add .")
@@ -189,7 +189,7 @@ def suggest_next_steps(has_commits, is_clean):
         print("    git commit -m 'Phase 0: Environment setup complete'")
     else:
         print("✅ Repository is up to date!")
-    
+
     print("\n2️⃣  Optional: Push to GitHub for backup")
     print("3️⃣  Proceed to Phase 1: Data Preparation")
 
@@ -198,28 +198,28 @@ def main():
     print("\n" + "=" * 60)
     print("GIT REPOSITORY VALIDATION")
     print("=" * 60 + "\n")
-    
+
     # Check git installation
     if not check_git_installed():
         return
-    
+
     print()
-    
+
     # Check if initialized
     if not check_git_initialized():
         print("\n❌ Git not initialized. Please run 'git init' first.")
         return
-    
+
     # Run all checks
     check_git_config()
     has_commits = check_commit_history()
     is_clean = check_git_status()
     check_gitignore()
     check_remote()
-    
+
     # Suggestions
     suggest_next_steps(has_commits, is_clean)
-    
+
     print("=" * 60)
 
 if __name__ == "__main__":
