@@ -1,4 +1,4 @@
-# Core ML Libraries (Python 3.13 compatible)
+# Core ML Libraries - Colab Optimized
 torch>=2.6.0
 torchvision>=0.20.0
 torchaudio>=2.6.0
@@ -11,7 +11,6 @@ soundfile>=0.12.1
 
 # Computer Vision
 opencv-python>=4.10.0
-mtcnn>=0.1.1
 pillow>=10.4.0
 
 # Deep Learning
@@ -19,26 +18,15 @@ numpy>=1.26.0
 scipy>=1.14.0
 scikit-learn>=1.5.0
 
-# Explainability
-shap>=0.46.0
+# Visualization & UI
 matplotlib>=3.9.0
 seaborn>=0.13.2
-
-# Backend
-fastapi>=0.115.0
-uvicorn>=0.32.0
-python-socketio>=5.11.0
-python-multipart>=0.0.17
-pydantic>=2.9.0
-
-# Database
-sqlalchemy>=2.0.36
+gradio>=4.26.0
 
 # Testing
 pytest>=8.3.0
 pytest-asyncio>=0.24.0
 
-# Development
+# Development (optional for Colab)
 jupyter>=1.1.0
 black>=24.10.0
-flake8>=7.1.0
