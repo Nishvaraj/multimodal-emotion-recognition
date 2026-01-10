@@ -23,8 +23,8 @@ vit_model = ViTForImageClassification.from_pretrained(
     ignore_mismatched_sizes=True
 )
 
-model_path = 'vit_emotion_model.pt'
-if not Path(model_path).exists():
+model_path = Path('./models/phase2/vit_emotion_model.pt')
+if not model_path.exists():
     print(f"Error: {model_path} not found")
     exit(1)
 
@@ -160,4 +160,4 @@ def launch_app():
 if __name__ == "__main__":
     print("🎥 Launching webcam emotion recognition app...\n")
     app = launch_app()
-    app.launch(server_name="127.0.0.1", server_port=7860, show_error=True)
+    app.launch(server_name="127.0.0.1", server_port=7861, show_error=True)
