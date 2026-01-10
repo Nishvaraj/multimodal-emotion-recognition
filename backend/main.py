@@ -3,12 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import torch
 import numpy as np
+import cv2
+import librosa
 from PIL import Image
 from io import BytesIO
 from pathlib import Path
-from transformers import AutoImageProcessor, AutoModelForImageClassification
+from transformers import AutoImageProcessor, AutoModelForImageClassification, AutoFeatureExtractor, AutoModelForAudioClassification
+import tempfile
+import os
 
-app = FastAPI(title="Emotion Recognition API", version="1.0.0")
+app = FastAPI(title="Multi-Modal Emotion Recognition API", version="2.0.0")
 
 # Enable CORS
 app.add_middleware(
@@ -19,121 +23,286 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global variables for models
-EMOTIONS = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
+# Configuration
+EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
+EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-vit_model = None
-image_processor = None
-MODEL_PATH = Path('./models/phase2/vit_emotion_model.pt')
 
-# Load models at startup
-def load_models():
-    """Load ViT model for facial emotion recognition"""
-    global vit_model, image_processor
-    
+# Model storage
+vit_model = None
+facial_processor = None
+speech_model = None
+speech_processor = None
+
+# Paths
+PROJECT_ROOT = Path(__file__).parent.parent
+FACIAL_MODEL_PATH = PROJECT_ROOT / 'models' / 'phase2' / 'vit_emotion_model.pt'
+SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'phase3' / 'hubert_emotion_model.pt'
+
+print(f"Device: {DEVICE}")
+print(f"Project root: {PROJECT_ROOT}")
+
+# ========== MODEL LOADING ==========
+
+def load_facial_model():
+    """Load ViT model for facial emotion"""
+    global vit_model, facial_processor
     try:
-        print("Loading Vision Transformer model...")
-        image_processor = AutoImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
-        
+        print("Loading Facial Emotion Model (ViT)...")
+        facial_processor = AutoImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
         vit_model = AutoModelForImageClassification.from_pretrained(
             'google/vit-base-patch16-224-in21k',
-            num_labels=len(EMOTIONS),
+            num_labels=len(EMOTIONS_FACIAL),
             ignore_mismatched_sizes=True
         )
         
-        if MODEL_PATH.exists():
-            checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
+        if FACIAL_MODEL_PATH.exists():
+            checkpoint = torch.load(FACIAL_MODEL_PATH, map_location=DEVICE)
             if 'model_state_dict' in checkpoint:
                 vit_model.load_state_dict(checkpoint['model_state_dict'])
             else:
                 vit_model.load_state_dict(checkpoint)
-            print(f"✓ Loaded trained weights from {MODEL_PATH}")
+            print(f"✓ Loaded ViT checkpoint")
         
         vit_model = vit_model.to(DEVICE)
         vit_model.eval()
-        print("✓ Vision Transformer model loaded successfully")
-        
+        print("✓ Facial model ready")
+        return True
     except Exception as e:
-        print(f"Error loading models: {e}")
+        print(f"❌ Error loading facial model: {e}")
+        return False
 
-# Load models on startup
-load_models()
+def load_speech_model():
+    """Load HuBERT model for speech emotion"""
+    global speech_model, speech_processor
+    try:
+        print("Loading Speech Emotion Model (HuBERT)...")
+        speech_processor = AutoFeatureExtractor.from_pretrained('facebook/hubert-large-ls960-ft')
+        speech_model = AutoModelForAudioClassification.from_pretrained(
+            'facebook/hubert-large-ls960-ft',
+            num_labels=len(EMOTIONS_SPEECH),
+            ignore_mismatched_sizes=True
+        )
+        
+        if SPEECH_MODEL_PATH.exists():
+            checkpoint = torch.load(SPEECH_MODEL_PATH, map_location=DEVICE)
+            if 'model_state_dict' in checkpoint:
+                speech_model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                speech_model.load_state_dict(checkpoint)
+            print(f"✓ Loaded HuBERT checkpoint")
+        
+        speech_model = speech_model.to(DEVICE)
+        speech_model.eval()
+        print("✓ Speech model ready")
+        return True
+    except Exception as e:
+        print(f"❌ Error loading speech model: {e}")
+        return False
 
-@app.get("/")
-async def root():
-    return {"message": "Emotion Recognition API", "status": "active"}
+# Load on startup
+facial_loaded = load_facial_model()
+speech_loaded = load_speech_model()
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy", "models_loaded": vit_model is not None}
+# ========== VIDEO PROCESSOR ==========
 
-@app.post("/api/predict/facial")
-async def predict_facial_emotion(file: UploadFile = File(...)):
-    """Predict facial emotion from uploaded image"""
+class VideoProcessor:
+    @staticmethod
+    def extract_frames_and_audio(video_path: str, fps_sample: int = 5):
+        """Extract frames and audio from video"""
+        frames = []
+        cap = cv2.VideoCapture(video_path)
+        
+        if not cap.isOpened():
+            raise ValueError(f"Cannot open video: {video_path}")
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        
+        frame_count = 0
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            if frame_count % fps_sample == 0:
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frames.append(Image.fromarray(frame_rgb))
+            
+            frame_count += 1
+        
+        cap.release()
+        
+        # Extract audio
+        audio, sr = librosa.load(video_path, sr=16000, mono=True)
+        
+        return frames, audio, sr, fps
+
+# ========== PREDICTION FUNCTIONS ==========
+
+def predict_facial_emotion(image: Image.Image):
+    """Predict emotion from image"""
     try:
         if vit_model is None:
-            return JSONResponse(
-                status_code=500,
-                content={"error": "Model not loaded"}
-            )
+            return None
         
-        # Read image
-        contents = await file.read()
-        image = Image.open(BytesIO(contents)).convert('RGB')
-        
-        # Preprocess
-        inputs = image_processor(image, return_tensors='pt').to(DEVICE)
-        
-        # Predict
+        inputs = facial_processor(image, return_tensors='pt').to(DEVICE)
         with torch.no_grad():
             outputs = vit_model(**inputs)
             logits = outputs.logits.cpu().numpy()[0]
             probs = torch.softmax(torch.from_numpy(logits), dim=0).numpy()
         
-        # Get results
         top_idx = np.argmax(probs)
-        top_emotion = EMOTIONS[top_idx]
-        
         return {
-            "success": True,
-            "emotion": top_emotion,
+            "emotion": EMOTIONS_FACIAL[top_idx],
             "confidence": float(probs[top_idx]),
-            "probabilities": {emotion: float(prob) for emotion, prob in zip(EMOTIONS, probs)}
+            "probabilities": {e: float(p) for e, p in zip(EMOTIONS_FACIAL, probs)}
         }
-        
     except Exception as e:
-        return JSONResponse(
-            status_code=400,
-            content={"error": str(e)}
-        )
+        print(f"Error predicting facial emotion: {e}")
+        return None
 
-@app.get("/api/predict/facial")
-async def predict_facial_emotion_demo():
-    """Demo endpoint for facial emotion prediction (GET)"""
-    return {
-        "message": "Use POST method to predict emotion from an image",
-        "usage": "POST /api/predict/facial with file upload",
-        "example": "curl -X POST 'http://127.0.0.1:8000/api/predict/facial' -F 'file=@image.jpg'",
-        "emotions": EMOTIONS,
-        "model_status": {
-            "loaded": vit_model is not None,
-            "accuracy": 0.7129
+def predict_speech_emotion(audio: np.ndarray, sr: int = 16000):
+    """Predict emotion from audio"""
+    try:
+        if speech_model is None:
+            return None
+        
+        if sr != 16000:
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+        
+        inputs = speech_processor(audio, sampling_rate=16000, return_tensors="pt", padding=True)
+        with torch.no_grad():
+            outputs = speech_model(inputs['input_values'].to(DEVICE))
+            logits = outputs.logits.cpu().numpy()[0]
+            probs = np.exp(logits) / np.sum(np.exp(logits))
+        
+        top_idx = np.argmax(probs)
+        return {
+            "emotion": EMOTIONS_SPEECH[top_idx],
+            "confidence": float(probs[top_idx]),
+            "probabilities": {e: float(p) for e, p in zip(EMOTIONS_SPEECH, probs)}
         }
+    except Exception as e:
+        print(f"Error predicting speech emotion: {e}")
+        return None
+
+# ========== API ENDPOINTS ==========
+
+@app.get("/")
+async def root():
+    return {"message": "Multi-Modal Emotion Recognition API v2.0", "status": "active"}
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+        "facial_model": facial_loaded,
+        "speech_model": speech_loaded,
+        "device": str(DEVICE)
     }
 
-@app.get("/api/emotions")
-async def get_emotions():
-    """Get list of supported emotions"""
-    return {"emotions": EMOTIONS, "count": len(EMOTIONS)}
+@app.post("/api/predict/facial")
+async def predict_facial(file: UploadFile = File(...)):
+    """Predict emotion from image"""
+    try:
+        contents = await file.read()
+        image = Image.open(BytesIO(contents)).convert('RGB')
+        result = predict_facial_emotion(image)
+        return {"success": True, **result} if result else {"success": False, "error": "Prediction failed"}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
-@app.get("/api/models")
+@app.post("/api/predict/speech")
+async def predict_speech(file: UploadFile = File(...)):
+    """Predict emotion from audio"""
+    try:
+        contents = await file.read()
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+        
+        try:
+            audio, sr = librosa.load(tmp_path, sr=16000)
+            result = predict_speech_emotion(audio, sr)
+            return {"success": True, **result} if result else {"success": False, "error": "Prediction failed"}
+        finally:
+            os.unlink(tmp_path)
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.post("/api/predict/video")
+async def predict_video_emotion(file: UploadFile = File(...)):
+    """Predict emotions from video (facial + speech)"""
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
+            contents = await file.read()
+            tmp.write(contents)
+            tmp_path = tmp.name
+        
+        try:
+            # Extract frames and audio
+            processor = VideoProcessor()
+            frames, audio, sr, fps = processor.extract_frames_and_audio(tmp_path, fps_sample=5)
+            
+            # Predict facial emotions from first 10 frames
+            facial_results = []
+            for frame in frames[:10]:
+                result = predict_facial_emotion(frame)
+                if result:
+                    facial_results.append(result)
+            
+            # Aggregate facial results
+            if facial_results:
+                facial_emotions = [r["emotion"] for r in facial_results]
+                facial_confidence = np.mean([r["confidence"] for r in facial_results])
+                facial_emotion = max(set(facial_emotions), key=facial_emotions.count)
+                facial_probs = {}
+                for emotion in EMOTIONS_FACIAL:
+                    facial_probs[emotion] = float(np.mean([r["probabilities"].get(emotion, 0) for r in facial_results]))
+            else:
+                facial_emotion = "unknown"
+                facial_confidence = 0.0
+                facial_probs = {e: 0.0 for e in EMOTIONS_FACIAL}
+            
+            # Predict speech emotion
+            speech_result = predict_speech_emotion(audio, sr)
+            
+            return {
+                "success": True,
+                "facial_emotion": {
+                    "emotion": facial_emotion,
+                    "confidence": float(facial_confidence),
+                    "frames_analyzed": len(facial_results),
+                    "probabilities": facial_probs
+                },
+                "speech_emotion": {
+                    "emotion": speech_result["emotion"] if speech_result else "unknown",
+                    "confidence": float(speech_result["confidence"]) if speech_result else 0.0,
+                    "probabilities": speech_result["probabilities"] if speech_result else {e: 0.0 for e in EMOTIONS_SPEECH}
+                },
+                "combined_emotion": facial_emotion if facial_confidence > 0.5 else (speech_result["emotion"] if speech_result else "unknown"),
+                "video_duration": float(len(audio) / sr),
+                "frames_processed": len(frames),
+                "fps": float(fps)
+            }
+        finally:
+            os.unlink(tmp_path)
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.get("/api/emotions/facial")
+async def get_facial_emotions():
+    return {"emotions": EMOTIONS_FACIAL}
+
+@app.get("/api/emotions/speech")
+async def get_speech_emotions():
+    return {"emotions": EMOTIONS_SPEECH}
+
+@app.get("/api/models/status")
 async def get_models_status():
-    """Get status of loaded models"""
     return {
-        "vit": {
-            "loaded": vit_model is not None,
-            "emotions": len(EMOTIONS),
-            "device": str(DEVICE),
-            "accuracy": 0.7129
-        }
+        "facial": {"loaded": facial_loaded, "accuracy": 0.7129, "emotions": len(EMOTIONS_FACIAL)},
+        "speech": {"loaded": speech_loaded, "accuracy": 0.8750, "emotions": len(EMOTIONS_SPEECH)},
+        "device": str(DEVICE)
     }
