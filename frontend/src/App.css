@@ -11,11 +11,406 @@ body {
   color: #333;
 }
 
-.App {
-  max-width: 1400px;
+.app-container {
+  max-width: 1200px;
   margin: 0 auto;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+/* Header */
+.gradio-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 40px;
+  text-align: center;
+}
+
+.gradio-header h1 {
+  font-size: 2.5em;
+  margin-bottom: 15px;
+  font-weight: 700;
+}
+
+.gradio-header p {
+  font-size: 1.1em;
+  margin: 10px 0;
+  opacity: 0.95;
+}
+
+.gradio-header ul {
+  margin: 20px 0;
+  line-height: 1.8;
+}
+
+.gradio-header ul li {
+  margin: 8px 0;
+}
+
+.gradio-header hr {
+  border: none;
+  border-top: 2px solid rgba(255, 255, 255, 0.3);
+  margin-top: 20px;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  border-bottom: 2px solid #e0e0e0;
+  background: #f9f9f9;
+  padding: 0;
+}
+
+.tab-btn {
+  flex: 1;
   padding: 20px;
-  min-height: 100vh;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #666;
+  transition: all 0.3s ease;
+  border-bottom: 3px solid transparent;
+}
+
+.tab-btn:hover {
+  background: #f0f0f0;
+  color: #667eea;
+}
+
+.tab-btn.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+}
+
+/* Tab Content */
+.tab-content {
+  padding: 40px;
+}
+
+.tab-content h2 {
+  color: #333;
+  margin-bottom: 30px;
+  font-size: 1.5em;
+}
+
+.tab-content h3 {
+  color: #667eea;
+  margin: 20px 0 15px 0;
+  font-size: 1.3em;
+}
+
+.tab-content ul {
+  margin-left: 20px;
+  line-height: 1.8;
+}
+
+.tab-content ul li {
+  margin: 8px 0;
+  color: #555;
+}
+
+.tab-content ol {
+  margin-left: 20px;
+  line-height: 1.8;
+}
+
+.tab-content ol li {
+  margin: 8px 0;
+  color: #555;
+}
+
+/* Two Column Layout */
+.two-column {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+  margin-bottom: 30px;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+}
+
+.column h3 {
+  color: #667eea;
+  margin-bottom: 20px;
+  font-size: 1.3em;
+}
+
+/* Input Elements */
+.input-label {
+  display: block;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 15px;
+  font-size: 1em;
+}
+
+.file-input {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin: 10px 0;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95em;
+  transition: all 0.3s ease;
+}
+
+.file-input:hover {
+  border-color: #667eea;
+  background: #f5f5ff;
+}
+
+.file-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Button Group */
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin: 15px 0;
+}
+
+.button-group button {
+  flex: 1;
+}
+
+/* Buttons */
+.btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1em;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+  background: #f0f0f0;
+  color: #667eea;
+  border: 2px solid #667eea;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #667eea;
+  color: white;
+  transform: translateY(-2px);
+}
+
+.btn-large {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 1.1em;
+}
+
+.btn-large:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Result Box */
+.result-box {
+  background: #f9f9f9;
+  padding: 20px;
+  border-radius: 8px;
+  margin-top: 20px;
+  border-left: 4px solid #667eea;
+}
+
+.result-box h4 {
+  color: #667eea;
+  margin-bottom: 15px;
+}
+
+.result-box p {
+  margin: 10px 0;
+  color: #555;
+}
+
+/* Combined Results */
+.combined-results {
+  background: #f9f9f9;
+  padding: 30px;
+  border-radius: 12px;
+  margin-top: 30px;
+}
+
+.combined-results h3 {
+  color: #333;
+  margin-bottom: 25px;
+}
+
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.result-item {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+  border: 2px solid #e0e0e0;
+}
+
+.result-item h4 {
+  color: #667eea;
+  margin-bottom: 10px;
+  font-size: 1em;
+}
+
+.emotion-name {
+  font-size: 1.5em;
+  font-weight: 700;
+  color: #333;
+  margin: 10px 0;
+}
+
+/* Video/Audio Preview */
+video, audio {
+  width: 100%;
+  max-width: 400px;
+  margin: 15px 0;
+  border-radius: 8px;
+  border: 2px solid #e0e0e0;
+}
+
+img {
+  border-radius: 8px;
+}
+
+/* Emotion Scores */
+.emotion-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.score-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.95em;
+}
+
+.score-bar span:first-child {
+  min-width: 80px;
+  font-weight: 600;
+  color: #555;
+  text-transform: capitalize;
+}
+
+.score-bar .bar {
+  flex: 1;
+  height: 24px;
+  background: #e8e8e8;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.score-bar .bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+}
+
+.score-bar span:last-child {
+  min-width: 50px;
+  text-align: right;
+  font-weight: 600;
+  color: #333;
+}
+
+/* Footer */
+.footer {
+  background: #f9f9f9;
+  padding: 20px;
+  text-align: center;
+  color: #666;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .app-container {
+    border-radius: 0;
+  }
+
+  .gradio-header {
+    padding: 20px;
+  }
+
+  .gradio-header h1 {
+    font-size: 1.8em;
+  }
+
+  .gradio-header p {
+    font-size: 1em;
+  }
+
+  .tabs {
+    flex-direction: column;
+  }
+
+  .tab-btn {
+    padding: 15px;
+    font-size: 1em;
+    border-bottom: 3px solid #e0e0e0;
+    border-right: none;
+  }
+
+  .tab-btn.active {
+    border-bottom-color: #667eea;
+  }
+
+  .tab-content {
+    padding: 20px;
+  }
+
+  .two-column {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .results-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .button-group {
+    flex-direction: column;
+  }
+
+  .button-group button {
+    width: 100%;
+  }
 }
 
 /* Header */
