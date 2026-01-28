@@ -231,6 +231,84 @@ async def predict_speech(file: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
+@app.post("/api/predict/combined")
+async def predict_combined(image_file: UploadFile = File(...), audio_file: UploadFile = File(...)):
+    """Predict emotions from both image and audio, then compare results"""
+    try:
+        # Process image
+        image_contents = await image_file.read()
+        image = Image.open(BytesIO(image_contents)).convert('RGB')
+        facial_result = predict_facial_emotion(image)
+        
+        # Process audio
+        audio_contents = await audio_file.read()
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+            tmp.write(audio_contents)
+            tmp_path = tmp.name
+        
+        try:
+            audio, sr = librosa.load(tmp_path, sr=16000)
+            speech_result = predict_speech_emotion(audio, sr)
+        finally:
+            os.unlink(tmp_path)
+        
+        # Extract emotions
+        facial_emotion = facial_result["emotion"] if facial_result else None
+        facial_confidence = facial_result["confidence"] if facial_result else 0.0
+        
+        speech_emotion = speech_result["emotion"] if speech_result else None
+        speech_confidence = speech_result["confidence"] if speech_result else 0.0
+        
+        # Compare emotions (concordance)
+        concordance = None
+        if facial_emotion and speech_emotion:
+            if facial_emotion == speech_emotion:
+                concordance = "MATCH"
+            else:
+                concordance = "MISMATCH"
+        
+        # Determine combined emotion (weighted by confidence)
+        combined_emotion = None
+        combined_confidence = 0.0
+        
+        if facial_emotion and speech_emotion:
+            # Weight by confidence scores
+            if facial_confidence > speech_confidence:
+                combined_emotion = facial_emotion
+                combined_confidence = facial_confidence
+            else:
+                combined_emotion = speech_emotion
+                combined_confidence = speech_confidence
+        elif facial_emotion:
+            combined_emotion = facial_emotion
+            combined_confidence = facial_confidence
+        elif speech_emotion:
+            combined_emotion = speech_emotion
+            combined_confidence = speech_confidence
+        
+        return {
+            "success": True,
+            "facial_emotion": {
+                "emotion": facial_emotion or "unknown",
+                "confidence": float(facial_confidence),
+                "probabilities": facial_result["probabilities"] if facial_result else {}
+            },
+            "speech_emotion": {
+                "emotion": speech_emotion or "unknown",
+                "confidence": float(speech_confidence),
+                "probabilities": speech_result["probabilities"] if speech_result else {}
+            },
+            "combined_emotion": combined_emotion or "unknown",
+            "combined_confidence": float(combined_confidence),
+            "concordance": concordance or "UNKNOWN",
+            "analysis": {
+                "match": concordance == "MATCH" if concordance else False,
+                "agreement_details": f"Face: {facial_emotion} (conf: {facial_confidence:.2f}) | Voice: {speech_emotion} (conf: {speech_confidence:.2f})"
+            }
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
 @app.post("/api/predict/video")
 async def predict_video_emotion(file: UploadFile = File(...)):
     """Predict emotions from video (facial + speech)"""

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
@@ -14,8 +14,721 @@ const EMOTION_EMOJIS = {
   'fearful': '😨',
 };
 
+const EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
+const EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised'];
+const API_BASE = 'http://127.0.0.1:8000';
+
+// ============== NEW TAB COMPONENTS ==============
+
+function FacialTab() {
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [emotion, setEmotion] = useState(null);
+  const [confidence, setConfidence] = useState(null);
+  const [probabilities, setProbabilities] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [isCameraOn, setIsCameraOn] = useState(false);
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        setImagePreview(evt.target.result);
+        setEmotion(null);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        setIsCameraOn(true);
+        setError(null);
+      }
+    } catch (err) {
+      setError('Cannot access camera');
+    }
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+      canvasRef.current.toBlob((blob) => {
+        setImageFile(blob);
+        const reader = new FileReader();
+        reader.onload = (evt) => setImagePreview(evt.target.result);
+        reader.readAsDataURL(blob);
+      });
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      setIsCameraOn(false);
+    }
+  };
+
+  const analyzeFacial = async () => {
+    if (!imageFile) {
+      setError('Please select or capture an image');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', imageFile);
+      const response = await axios.post(`${API_BASE}/api/predict/facial`, formData);
+      if (response.data.success) {
+        setEmotion(response.data.emotion);
+        setConfidence(response.data.confidence);
+        setProbabilities(response.data.probabilities);
+      }
+    } catch (err) {
+      setError('API Error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="tab-content">
+      <h2>📸 Facial Emotion Recognition</h2>
+      <div className="two-column">
+        <div className="column">
+          <h3>Capture Photo</h3>
+          {!isCameraOn ? (
+            <button className="btn btn-primary" onClick={startCamera}>📷 Start Webcam</button>
+          ) : (
+            <>
+              <video ref={videoRef} autoPlay playsInline style={{ width: '100%', borderRadius: '8px', marginBottom: '10px', maxHeight: '300px' }} />
+              <canvas ref={canvasRef} width="320" height="240" style={{ display: 'none' }} />
+              <div className="button-group">
+                <button className="btn btn-success" onClick={capturePhoto}>📸 Capture</button>
+                <button className="btn btn-danger" onClick={stopCamera}>❌ Stop</button>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="column">
+          <h3>Upload Image</h3>
+          <input type="file" accept="image/*" onChange={handleImageSelect} className="file-input" />
+        </div>
+      </div>
+      {imagePreview && (
+        <>
+          <img src={imagePreview} alt="Preview" style={{ width: '100%', maxHeight: '200px', borderRadius: '8px', marginBottom: '10px' }} />
+          <button className="btn btn-primary" onClick={analyzeFacial} disabled={loading} style={{ width: '100%' }}>
+            {loading ? '⏳ Analyzing...' : '🔮 Analyze Face'}
+          </button>
+        </>
+      )}
+      {error && <div className="error-message">{error}</div>}
+      {emotion && (
+        <div className="results-box">
+          <h3>{EMOTION_EMOJIS[emotion]} {emotion.toUpperCase()} ({(confidence * 100).toFixed(1)}%)</h3>
+          {probabilities && (
+            <div className="probabilities">
+              {EMOTIONS_FACIAL.map((emo) => (
+                <div key={emo} className="prob-item">
+                  <span>{EMOTION_EMOJIS[emo]} {emo}</span>
+                  <div className="prob-bar">
+                    <div className="prob-fill" style={{ width: `${(probabilities[emo] || 0) * 100}%` }} />
+                  </div>
+                  <span>{((probabilities[emo] || 0) * 100).toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SpeechTab() {
+  const [audioFile, setAudioFile] = useState(null);
+  const [emotion, setEmotion] = useState(null);
+  const [confidence, setConfidence] = useState(null);
+  const [probabilities, setProbabilities] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
+  const analyzerRef = useRef(null);
+  const canvasAnalyzerRef = useRef(null);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      
+      // Setup audio visualization
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      analyzerRef.current = analyser;
+      
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(chunksRef.current, { type: 'audio/wav' });
+        setAudioFile(audioBlob);
+      };
+      mediaRecorder.start();
+      setIsRecording(true);
+      setError(null);
+      
+      // Start visualization
+      visualizeAudio(analyser);
+    } catch (err) {
+      setError('Cannot access microphone');
+    }
+  };
+  
+  const visualizeAudio = (analyser) => {
+    const canvas = canvasAnalyzerRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const draw = () => {
+      if (!isRecording) return;
+      
+      requestAnimationFrame(draw);
+      analyser.getByteFrequencyData(dataArray);
+      
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#667eea';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      
+      const sliceWidth = canvas.width / bufferLength;
+      let x = 0;
+      
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * canvas.height) / 2;
+        
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        
+        x += sliceWidth;
+      }
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
+    };
+    draw();
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+    }
+  };
+
+  const handleAudioSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setAudioFile(file);
+      setEmotion(null);
+    }
+  };
+
+  const analyzeSpeech = async () => {
+    if (!audioFile) {
+      setError('Please record or upload audio');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', audioFile);
+      const response = await axios.post(`${API_BASE}/api/predict/speech`, formData);
+      if (response.data.success) {
+        setEmotion(response.data.emotion);
+        setConfidence(response.data.confidence);
+        setProbabilities(response.data.probabilities);
+      }
+    } catch (err) {
+      setError('API Error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="tab-content">
+      <h2>🎤 Speech Emotion Recognition</h2>
+      <div className="two-column">
+        <div className="column">
+          <h3>Record Audio</h3>
+          {!isRecording ? (
+            <button className="btn btn-primary" onClick={startRecording}>🎙️ Start Recording</button>
+          ) : (
+            <>
+              <p style={{ color: '#e74c3c', fontWeight: '600' }}>🔴 Recording...</p>
+              <canvas 
+                ref={canvasAnalyzerRef} 
+                width="300" 
+                height="80" 
+                style={{ 
+                  width: '100%', 
+                  border: '2px solid #667eea', 
+                  borderRadius: '4px', 
+                  marginBottom: '10px', 
+                  backgroundColor: '#f0f0f0' 
+                }} 
+              />
+              <button className="btn btn-danger" onClick={stopRecording}>⏹️ Stop Recording</button>
+            </>
+          )}
+          {audioFile && !isRecording && <p style={{ color: '#667eea', fontWeight: '600' }}>✅ Audio ready</p>}
+        </div>
+        <div className="column">
+          <h3>Upload Audio</h3>
+          <input type="file" accept="audio/*" onChange={handleAudioSelect} className="file-input" />
+        </div>
+      </div>
+      {audioFile && (
+        <button className="btn btn-primary" onClick={analyzeSpeech} disabled={loading} style={{ width: '100%' }}>
+          {loading ? '⏳ Analyzing...' : '🔮 Analyze Audio'}
+        </button>
+      )}
+      {error && <div className="error-message">{error}</div>}
+      {emotion && (
+        <div className="results-box">
+          <h3>{EMOTION_EMOJIS[emotion]} {emotion.toUpperCase()} ({(confidence * 100).toFixed(1)}%)</h3>
+          {probabilities && (
+            <div className="probabilities">
+              {EMOTIONS_SPEECH.map((emo) => (
+                <div key={emo} className="prob-item">
+                  <span>{EMOTION_EMOJIS[emo]} {emo}</span>
+                  <div className="prob-bar">
+                    <div className="prob-fill" style={{ width: `${(probabilities[emo] || 0) * 100}%` }} />
+                  </div>
+                  <span>{((probabilities[emo] || 0) * 100).toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CombinedTab() {
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [audioFile, setAudioFile] = useState(null);
+  const [facialEmotion, setFacialEmotion] = useState(null);
+  const [speechEmotion, setSpeechEmotion] = useState(null);
+  const [concordance, setConcordance] = useState(null);
+  const [facialProbs, setFacialProbs] = useState(null);
+  const [speechProbs, setSpeechProbs] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [isCameraOn, setIsCameraOn] = useState(false);
+  const [isRecordingVideo, setIsRecordingVideo] = useState(false);
+  
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
+  const analyzerRef = useRef(null);
+  const canvasAnalyzerRef = useRef(null);
+
+  // Ensure video plays when camera is on
+  useEffect(() => {
+    if (isCameraOn && videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.play().catch(err => console.log('Video play error:', err));
+    }
+  }, [isCameraOn]);
+
+  const startVideoRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { width: 1280, height: 720 },
+        audio: true 
+      });
+      
+      // Store stream first
+      streamRef.current = stream;
+      
+      // Set up video element
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        
+        // Wait a moment for the video element to be ready, then play it
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.play().catch(err => {
+              console.error('Video play failed:', err);
+              setError('Video playback error: ' + err.message);
+            });
+          }
+        }, 100);
+      }
+      
+      chunksRef.current = [];
+      setIsCameraOn(true);
+      setError(null);
+      
+      // Setup audio visualization
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const audioSource = audioContext.createMediaStreamSource(stream);
+      audioSource.connect(analyser);
+      analyzerRef.current = analyser;
+      
+      // Start video + audio recording
+      const mediaRecorder = new MediaRecorder(stream, { 
+        mimeType: 'video/webm;codecs=vp8,opus' 
+      });
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      mediaRecorder.start();
+      setIsRecordingVideo(true);
+      
+      // Visualize audio during recording
+      visualizeAudio(analyser);
+    } catch (err) {
+      setError('Cannot access camera/microphone: ' + err.message);
+      console.error('Camera/microphone error:', err);
+    }
+  };
+
+  const visualizeAudio = (analyser) => {
+    const canvas = canvasAnalyzerRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const draw = () => {
+      if (!isRecordingVideo) return;
+      
+      requestAnimationFrame(draw);
+      analyser.getByteFrequencyData(dataArray);
+      
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#667eea';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      
+      const sliceWidth = canvas.width * 1.0 / bufferLength;
+      let x = 0;
+      
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * canvas.height) / 2;
+        
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        
+        x += sliceWidth;
+      }
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
+    };
+    draw();
+  };
+
+  const stopVideoRecording = () => {
+    if (mediaRecorderRef.current && isRecordingVideo) {
+      mediaRecorderRef.current.onstop = () => {
+        const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' });
+        
+        // Extract frame from video
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(videoBlob);
+        video.muted = true;
+        
+        video.onloadedmetadata = () => {
+          // Extract frame from middle of video for better quality
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          
+          // Seek to middle of video
+          video.currentTime = Math.min(video.duration * 0.5, 2);
+          
+          video.onseeked = () => {
+            ctx.drawImage(video, 0, 0);
+            canvas.toBlob((imageBlob) => {
+              if (imageBlob) {
+                setImageFile(imageBlob);
+                const reader = new FileReader();
+                reader.onload = (evt) => setImagePreview(evt.target.result);
+                reader.readAsDataURL(imageBlob);
+              }
+            });
+          };
+        };
+        
+        // Note: Audio extraction from webm is complex, user must upload audio separately
+        setError('Video captured! Now upload audio file to complete the analysis.');
+      };
+      
+      mediaRecorderRef.current.stop();
+      setIsRecordingVideo(false);
+      
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    }
+  };
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onload = (evt) => setImagePreview(evt.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAudioSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) setAudioFile(file);
+  };
+
+  const analyzeCombined = async () => {
+    if (!imageFile || !audioFile) {
+      setError('Please provide both image and audio');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('image_file', imageFile);
+      formData.append('audio_file', audioFile);
+      const response = await axios.post(`${API_BASE}/api/predict/combined`, formData);
+      if (response.data.success) {
+        setFacialEmotion(response.data.facial_emotion.emotion);
+        setSpeechEmotion(response.data.speech_emotion.emotion);
+        setConcordance(response.data.concordance);
+        setFacialProbs(response.data.facial_emotion.probabilities);
+        setSpeechProbs(response.data.speech_emotion.probabilities);
+      }
+    } catch (err) {
+      setError('API Error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="tab-content">
+      <h2>🎥 Combined Video + Analysis</h2>
+      
+      {/* VIDEO RECORDING SECTION */}
+      <div style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #ddd' }}>
+        <h3>🎬 Record Video (webcam + voice)</h3>
+        <p style={{ color: '#666', fontSize: '0.9em', marginBottom: '10px' }}>Record a video with your face and voice together - it will automatically extract image and audio for analysis</p>
+        
+        {!isCameraOn ? (
+          <button className="btn btn-primary" onClick={startVideoRecording} style={{ padding: '12px 20px', fontSize: '16px' }}>
+            🎥 Start Video Recording
+          </button>
+        ) : (
+          <>
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              muted
+              style={{ 
+                width: '100%', 
+                height: 'auto',
+                minHeight: '300px',
+                borderRadius: '8px', 
+                marginBottom: '10px', 
+                backgroundColor: '#000',
+                border: '3px solid #667eea',
+                display: 'block',
+                objectFit: 'cover'
+              }} 
+            />
+            <canvas ref={canvasRef} width="320" height="240" style={{ display: 'none' }} />
+            
+            {isRecordingVideo && (
+              <>
+                <p style={{ color: '#e74c3c', fontWeight: '600', marginBottom: '10px' }}>
+                  🔴 RECORDING... (Video + Audio)
+                </p>
+                <canvas 
+                  ref={canvasAnalyzerRef} 
+                  width="600" 
+                  height="100" 
+                  style={{ 
+                    width: '100%', 
+                    border: '2px solid #667eea', 
+                    borderRadius: '4px', 
+                    marginBottom: '10px', 
+                    backgroundColor: '#f0f0f0' 
+                  }} 
+                />
+              </>
+            )}
+            
+            <div className="button-group">
+              <button className="btn btn-danger" onClick={stopVideoRecording} style={{ padding: '10px 20px' }}>
+                ⏹️ Stop & Extract
+              </button>
+            </div>
+          </>
+        )}
+        
+        {imageFile && audioFile && (
+          <p style={{ color: '#27ae60', fontWeight: '600', marginTop: '10px' }}>
+            ✅ Image & Audio extracted from video
+          </p>
+        )}
+      </div>
+      
+      {/* MANUAL UPLOAD SECTION */}
+      <div style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #ddd' }}>
+        <h3>📤 Or Upload Separately</h3>
+        <div className="two-column">
+          <div className="column">
+            <h4>📸 Image File</h4>
+            <input type="file" accept="image/*" onChange={handleImageSelect} className="file-input" />
+            {imagePreview && (
+              <img 
+                src={imagePreview} 
+                alt="Preview" 
+                style={{ width: '100%', maxHeight: '150px', marginTop: '10px', borderRadius: '8px' }} 
+              />
+            )}
+            {imageFile && <p style={{ color: '#667eea', fontWeight: '600' }}>✅ Ready</p>}
+          </div>
+          <div className="column">
+            <h4>🎤 Audio File</h4>
+            <input type="file" accept="audio/*" onChange={handleAudioSelect} className="file-input" />
+            {audioFile && <p style={{ color: '#667eea', fontWeight: '600' }}>✅ Ready</p>}
+          </div>
+        </div>
+      </div>
+      
+      {/* ANALYZE SECTION */}
+      {imageFile && audioFile && (
+        <button 
+          className="btn btn-primary" 
+          onClick={analyzeCombined} 
+          disabled={loading} 
+          style={{ width: '100%', padding: '12px', fontSize: '16px', marginBottom: '20px' }}
+        >
+          {loading ? '⏳ Analyzing...' : '🚀 Analyze Both'}
+        </button>
+      )}
+      
+      {error && <div className="error-message">{error}</div>}
+      
+      {/* RESULTS SECTION */}
+      {facialEmotion && speechEmotion && (
+        <div className="results-box">
+          <h3 style={{ marginBottom: '15px' }}>
+            📊 Results - {concordance === 'MATCH' ? '✅ MATCH!' : '⚠️ MISMATCH'}
+          </h3>
+          <div className="two-column">
+            <div className="column results-col">
+              <h4>📸 Facial: {EMOTION_EMOJIS[facialEmotion]} {facialEmotion.toUpperCase()}</h4>
+              {facialProbs && (
+                <div className="probabilities">
+                  {Object.entries(facialProbs).slice(0, 4).map(([emo, prob]) => (
+                    <div key={emo} className="prob-item" style={{ fontSize: '0.85em' }}>
+                      <span>{EMOTION_EMOJIS[emo]} {emo}</span>
+                      <div className="prob-bar"><div className="prob-fill" style={{ width: `${prob * 100}%` }} /></div>
+                      <span>{(prob * 100).toFixed(0)}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="column results-col">
+              <h4>🎤 Speech: {EMOTION_EMOJIS[speechEmotion]} {speechEmotion.toUpperCase()}</h4>
+              {speechProbs && (
+                <div className="probabilities">
+                  {Object.entries(speechProbs).slice(0, 4).map(([emo, prob]) => (
+                    <div key={emo} className="prob-item" style={{ fontSize: '0.85em' }}>
+                      <span>{EMOTION_EMOJIS[emo]} {emo}</span>
+                      <div className="prob-bar"><div className="prob-fill" style={{ width: `${prob * 100}%` }} /></div>
+                      <span>{(prob * 100).toFixed(0)}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModelInfoTab() {
+  return (
+    <div className="tab-content">
+      <h2>ℹ️ Model Information</h2>
+      <div className="two-column">
+        <div className="column">
+          <h3>📸 Facial Emotion (ViT)</h3>
+          <ul>
+            <li><strong>Architecture:</strong> Vision Transformer</li>
+            <li><strong>Dataset:</strong> FER2013 (35,887 images)</li>
+            <li><strong>Emotions:</strong> 7 classes</li>
+            <li><strong>Accuracy:</strong> 71.29%</li>
+            <li><strong>Size:</strong> 327MB</li>
+            <li><strong>Input:</strong> 224×224 RGB</li>
+          </ul>
+        </div>
+        <div className="column">
+          <h3>🎤 Speech Emotion (HuBERT)</h3>
+          <ul>
+            <li><strong>Architecture:</strong> HuBERT Large</li>
+            <li><strong>Dataset:</strong> RAVDESS (1,440 files)</li>
+            <li><strong>Emotions:</strong> 8 classes</li>
+            <li><strong>Accuracy:</strong> 87.50%</li>
+            <li><strong>Size:</strong> ~360MB</li>
+            <li><strong>Input:</strong> 16kHz Mono</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
-  const [activeTab, setActiveTab] = useState('separate');
+  const [activeTab, setActiveTab] = useState(0);
   
   // Separate Testing - Facial
   const [facialImage, setFacialImage] = useState(null);
@@ -412,387 +1125,36 @@ function App() {
       {/* Tabs */}
       <div className="tabs">
         <button 
-          className={`tab-btn ${activeTab === 'separate' ? 'active' : ''}`}
-          onClick={() => setActiveTab('separate')}
+          className={`tab-btn ${activeTab === 0 ? 'active' : ''}`}
+          onClick={() => setActiveTab(0)}
         >
-          🔀 Separate Testing
+          📸 Facial Emotion
         </button>
         <button 
-          className={`tab-btn ${activeTab === 'combined' ? 'active' : ''}`}
-          onClick={() => setActiveTab('combined')}
+          className={`tab-btn ${activeTab === 1 ? 'active' : ''}`}
+          onClick={() => setActiveTab(1)}
+        >
+          🎤 Speech Emotion
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 2 ? 'active' : ''}`}
+          onClick={() => setActiveTab(2)}
         >
           🔗 Combined Analysis
         </button>
         <button 
-          className={`tab-btn ${activeTab === 'video' ? 'active' : ''}`}
-          onClick={() => setActiveTab('video')}
-        >
-          🎬 Video Analysis
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`}
-          onClick={() => setActiveTab('info')}
+          className={`tab-btn ${activeTab === 3 ? 'active' : ''}`}
+          onClick={() => setActiveTab(3)}
         >
           ℹ️ Model Information
         </button>
       </div>
 
-      {/* Tab 1: Separate Testing */}
-      {activeTab === 'separate' && (
-        <div className="tab-content">
-          <h2>### Test facial and voice emotions separately</h2>
-          
-          <div className="two-column">
-            {/* FACIAL */}
-            <div className="column">
-              <h3>📸 Facial Emotion</h3>
-              
-              <label className="input-label">Capture or Upload Image</label>
-              <video 
-                ref={facialVideoRef} 
-                autoPlay 
-                playsInline
-                style={{ display: 'none', width: '100%', borderRadius: '8px', marginBottom: '10px', maxHeight: '300px' }}
-              />
-              <canvas ref={facialCanvasRef} style={{ display: 'none' }} />
-              
-              <div className="button-group">
-                <button onClick={startFacialWebcam} className="btn btn-secondary">📷 Start Webcam</button>
-              </div>
-              
-              {facialVideoRef.current?.srcObject && (
-                <button onClick={captureFacialImage} className="btn btn-primary" style={{ marginTop: '10px', width: '100%' }}>
-                  📸 Capture Image
-                </button>
-              )}
-              
-              <input 
-                type="file" 
-                accept="image/*"
-                onChange={handleFacialFileSelect}
-                className="file-input"
-                style={{ marginTop: '10px' }}
-              />
-              
-              {facialImageUrl && (
-                <img src={facialImageUrl} alt="Facial" style={{ width: '100%', borderRadius: '8px', marginTop: '10px', maxHeight: '300px' }} />
-              )}
-              
-              <button 
-                onClick={predictFacialEmotion} 
-                disabled={isProcessingFacial || !facialImage}
-                className="btn btn-primary"
-                style={{ marginTop: '15px', width: '100%' }}
-              >
-                {isProcessingFacial ? '⏳ Analyzing...' : '🔮 Analyze Face'}
-              </button>
-              
-              {facialEmotion && (
-                <div className="result-box">
-                  <h4>😊 Facial Emotion: <strong>{facialEmotion.toUpperCase()}</strong> ({(facialConfidence * 100).toFixed(1)}%)</h4>
-                  {facialAnnotatedUrl && (
-                    <img src={facialAnnotatedUrl} alt="Annotated" style={{ width: '100%', borderRadius: '8px', marginTop: '10px' }} />
-                  )}
-                  {facialProbs && (
-                    <>
-                      <h4 style={{ marginTop: '15px' }}>📊 Confidence Scores</h4>
-                      {renderConfidenceScores(facialProbs)}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* SPEECH */}
-            <div className="column">
-              <h3>🎤 Voice Emotion</h3>
-              
-              <label className="input-label">Record or Upload Audio</label>
-              <audio 
-                ref={speechAudioRef}
-                controls
-                style={{ width: '100%', marginBottom: '10px' }}
-              />
-              
-              <div className="button-group">
-                {!isRecordingSpeech ? (
-                  <button 
-                    onClick={startSpeechRecording} 
-                    className="btn btn-secondary"
-                  >
-                    🎤 Record Audio
-                  </button>
-                ) : (
-                  <button 
-                    onClick={stopSpeechRecording} 
-                    className="btn btn-secondary"
-                  >
-                    ⏹️ Stop Recording
-                  </button>
-                )}
-              </div>
-              
-              <input 
-                type="file" 
-                accept="audio/*"
-                onChange={handleSpeechFileSelect}
-                className="file-input"
-                style={{ marginTop: '10px' }}
-              />
-              
-              <button 
-                onClick={predictSpeechEmotion} 
-                disabled={isProcessingSpeech || !speechAudio}
-                className="btn btn-primary"
-                style={{ marginTop: '15px', width: '100%' }}
-              >
-                {isProcessingSpeech ? '⏳ Analyzing...' : '🔮 Analyze Voice'}
-              </button>
-              
-              {speechEmotion && (
-                <div className="result-box">
-                  <h4>🎤 Voice Emotion: <strong>{speechEmotion.toUpperCase()}</strong> ({(speechConfidence * 100).toFixed(1)}%)</h4>
-                  {speechProbs && (
-                    <>
-                      <h4 style={{ marginTop: '15px' }}>📊 Confidence Scores</h4>
-                      {renderConfidenceScores(speechProbs)}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 2: Combined Analysis */}
-      {activeTab === 'combined' && (
-        <div className="tab-content">
-          <h2>### Test facial and voice together for multimodal comparison</h2>
-          
-          <div className="two-column">
-            <div className="column">
-              <label className="input-label">📸 Capture or Upload Image</label>
-              
-              <video 
-                ref={combinedVideoRef} 
-                autoPlay 
-                playsInline
-                style={{ display: 'none', width: '100%', borderRadius: '8px', marginBottom: '10px', maxHeight: '300px' }}
-              />
-              <canvas ref={combinedCanvasRef} style={{ display: 'none' }} />
-              
-              <div className="button-group">
-                <button onClick={startCombinedWebcam} className="btn btn-secondary">📷 Webcam</button>
-              </div>
-              
-              {combinedVideoRef.current?.srcObject && (
-                <button onClick={captureCombinedImage} className="btn btn-primary" style={{ marginTop: '10px', width: '100%' }}>
-                  📸 Capture
-                </button>
-              )}
-              
-              <input 
-                type="file" 
-                accept="image/*"
-                onChange={handleCombinedImageSelect}
-                className="file-input"
-                style={{ marginTop: '10px' }}
-              />
-              
-              {combinedImageUrl && (
-                <img src={combinedImageUrl} alt="Combined" style={{ width: '100%', borderRadius: '8px', marginTop: '10px', maxHeight: '300px' }} />
-              )}
-            </div>
-
-            <div className="column">
-              <label className="input-label">🎤 Record or Upload Audio</label>
-              
-              <div className="button-group">
-                <button onClick={startCombinedAudioRecording} className="btn btn-secondary">🎤 Record</button>
-              </div>
-              
-              <input 
-                type="file" 
-                accept="audio/*"
-                onChange={handleCombinedAudioSelect}
-                className="file-input"
-                style={{ marginTop: '10px' }}
-              />
-              
-              {combinedAudio && (
-                <p style={{ marginTop: '10px', color: '#667eea', fontWeight: '600' }}>✓ Audio selected</p>
-              )}
-            </div>
-          </div>
-          
-          <button 
-            onClick={predictCombinedEmotion} 
-            disabled={isProcessingCombined || !combinedImage || !combinedAudio}
-            className="btn btn-large"
-            style={{ marginTop: '20px', width: '100%', padding: '15px', fontSize: '16px' }}
-          >
-            {isProcessingCombined ? '⏳ Analyzing Both...' : '🚀 Analyze Both'}
-          </button>
-          
-          {combinedFacialEmotion && combinedSpeechEmotion && (
-            <div className="combined-results">
-              <h3>📊 Multimodal Analysis Results</h3>
-              
-              {combinedAnnotatedUrl && (
-                <img src={combinedAnnotatedUrl} alt="Annotated" style={{ width: '100%', borderRadius: '8px', marginBottom: '20px' }} />
-              )}
-              
-              <div className="results-grid">
-                <div className="result-item">
-                  <h4>Facial Emotion</h4>
-                  <p className="emotion-name">{EMOTION_EMOJIS[combinedFacialEmotion.toLowerCase()] || '😐'} {combinedFacialEmotion.toUpperCase()}</p>
-                  {combinedFacialProbs && renderConfidenceScores(combinedFacialProbs)}
-                </div>
-                <div className="result-item">
-                  <h4>Voice Emotion</h4>
-                  <p className="emotion-name">{EMOTION_EMOJIS[combinedSpeechEmotion.toLowerCase()] || '🎤'} {combinedSpeechEmotion.toUpperCase()}</p>
-                  {combinedSpeechProbs && renderConfidenceScores(combinedSpeechProbs)}
-                </div>
-                <div className="result-item">
-                  <h4>Concordance</h4>
-                  <p className="emotion-name">{combinedComparison?.includes('MATCH') ? '✅ MATCH' : '⚠️ MISMATCH'}</p>
-                  <p style={{ fontSize: '0.9em', marginTop: '10px' }}>{combinedComparison}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab 3: Video Analysis */}
-      {activeTab === 'video' && (
-        <div className="tab-content">
-          <h2>### Analyze emotions from video files</h2>
-          <p style={{ color: '#666', marginBottom: '20px' }}>Upload a video file to automatically extract facial emotions from frames and speech emotion from audio</p>
-          
-          <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-            <label className="input-label">📹 Upload Video File</label>
-            <input 
-              type="file" 
-              accept="video/*"
-              onChange={handleVideoSelect}
-              className="file-input"
-            />
-            
-            {videoFile && (
-              <video 
-                src={URL.createObjectURL(videoFile)}
-                controls
-                style={{ width: '100%', borderRadius: '8px', marginTop: '15px', maxHeight: '400px' }}
-              />
-            )}
-            
-            <button 
-              onClick={predictVideoEmotion}
-              disabled={isProcessingVideo || !videoFile}
-              className="btn btn-large"
-              style={{ marginTop: '20px', width: '100%', padding: '15px', fontSize: '16px' }}
-            >
-              {isProcessingVideo ? '⏳ Analyzing Video...' : '🎬 Analyze Video'}
-            </button>
-          </div>
-          
-          {videoResult && (
-            <div className="combined-results" style={{ marginTop: '30px' }}>
-              <h3>📊 Video Analysis Results</h3>
-              
-              <div className="results-grid">
-                <div className="result-item">
-                  <h4>Facial Analysis</h4>
-                  <p className="emotion-name">{EMOTION_EMOJIS[videoResult.facial_emotion?.emotion?.toLowerCase()] || '😐'} {videoResult.facial_emotion?.emotion?.toUpperCase()}</p>
-                  <p style={{ fontSize: '0.9em', color: '#666', marginTop: '10px' }}>Confidence: {(videoResult.facial_emotion?.confidence * 100).toFixed(1)}%</p>
-                  <p style={{ fontSize: '0.85em', color: '#999', marginTop: '5px' }}>Frames analyzed: {videoResult.facial_emotion?.frames_analyzed}</p>
-                  {videoResult.facial_emotion?.probabilities && (
-                    <>
-                      <h5 style={{ marginTop: '15px', fontSize: '0.95em' }}>Emotion Breakdown:</h5>
-                      {renderConfidenceScores(videoResult.facial_emotion?.probabilities)}
-                    </>
-                  )}
-                </div>
-                
-                <div className="result-item">
-                  <h4>Voice Analysis</h4>
-                  <p className="emotion-name">{EMOTION_EMOJIS[videoResult.speech_emotion?.emotion?.toLowerCase()] || '🎤'} {videoResult.speech_emotion?.emotion?.toUpperCase()}</p>
-                  <p style={{ fontSize: '0.9em', color: '#666', marginTop: '10px' }}>Confidence: {(videoResult.speech_emotion?.confidence * 100).toFixed(1)}%</p>
-                  {videoResult.speech_emotion?.probabilities && (
-                    <>
-                      <h5 style={{ marginTop: '15px', fontSize: '0.95em' }}>Emotion Breakdown:</h5>
-                      {renderConfidenceScores(videoResult.speech_emotion?.probabilities)}
-                    </>
-                  )}
-                </div>
-                
-                <div className="result-item">
-                  <h4>Concordance</h4>
-                  <p className="emotion-name">{videoResult.facial_emotion?.emotion?.toLowerCase() === videoResult.speech_emotion?.emotion?.toLowerCase() ? '✅ MATCH' : '⚠️ MISMATCH'}</p>
-                  <p style={{ fontSize: '0.9em', marginTop: '15px' }}>
-                    {videoResult.facial_emotion?.emotion?.toLowerCase() === videoResult.speech_emotion?.emotion?.toLowerCase() ? 
-                      `Both facial and voice indicate ${videoResult.facial_emotion?.emotion?.toUpperCase()}` : 
-                      `Face: ${videoResult.facial_emotion?.emotion?.toUpperCase()} | Voice: ${videoResult.speech_emotion?.emotion?.toUpperCase()}`
-                    }
-                  </p>
-                </div>
-              </div>
-              
-              <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f5f5f5', borderRadius: '8px', textAlign: 'center', color: '#666' }}>
-                <p><strong>Video Duration:</strong> {(videoResult.video_duration).toFixed(2)}s | <strong>Total Frames:</strong> {videoResult.frames_processed}</p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Tab 4: Model Information */}
-      {activeTab === 'info' && (
-        <div className="tab-content">
-          <h2>## 📊 Model Details</h2>
-          
-          <h3>📸 Facial Emotion Recognition (ViT)</h3>
-          <ul>
-            <li><strong>Architecture:</strong> Vision Transformer (google/vit-base-patch16-224-in21k)</li>
-            <li><strong>Training Data:</strong> FER2013 Dataset (35,887 images)</li>
-            <li><strong>Emotions:</strong> 7 classes (Angry, Disgust, Fear, Happy, Neutral, Sad, Surprise)</li>
-            <li><strong>Accuracy:</strong> 71.29%</li>
-            <li><strong>Model Size:</strong> 327MB</li>
-            <li><strong>Input:</strong> RGB Images (224×224)</li>
-          </ul>
-          
-          <h3>🎤 Speech Emotion Recognition (HuBERT)</h3>
-          <ul>
-            <li><strong>Architecture:</strong> HuBERT Large (facebook/hubert-large-ls960-ft)</li>
-            <li><strong>Training Data:</strong> RAVDESS Dataset (1,440 audio files)</li>
-            <li><strong>Emotions:</strong> 8 classes (Angry, Calm, Disgust, Fearful, Happy, Neutral, Sad, Surprised)</li>
-            <li><strong>Accuracy:</strong> 87.50%</li>
-            <li><strong>Model Size:</strong> ~360MB</li>
-            <li><strong>Input:</strong> 16kHz Mono Audio</li>
-          </ul>
-          
-          <h3>🎯 How to Use</h3>
-          <strong>Separate Testing:</strong>
-          <ol>
-            <li>Use the 🔀 tab to test facial or voice separately</li>
-            <li>Capture/upload image and click "🔮 Analyze Face"</li>
-            <li>Record/upload audio and click "🔮 Analyze Voice"</li>
-            <li>View confidence scores for each emotion</li>
-          </ol>
-          
-          <strong>Combined Analysis:</strong>
-          <ol>
-            <li>Use the 🔗 tab for multimodal testing</li>
-            <li>Capture/upload both image and audio</li>
-            <li>Click "🚀 Analyze Both"</li>
-            <li>Compare facial expression with voice tone</li>
-            <li>Check for emotional concordance (match/mismatch)</li>
-          </ol>
-        </div>
-      )}
-
+      {/* Tab Rendering */}
+      {activeTab === 0 && <FacialTab />}
+      {activeTab === 1 && <SpeechTab />}
+      {activeTab === 2 && <CombinedTab />}
+      {activeTab === 3 && <ModelInfoTab />}
       <footer className="footer">
         <p>© 2026 Multi-Modal Emotion Recognition System</p>
       </footer>

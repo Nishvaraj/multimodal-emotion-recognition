@@ -1,7 +1,7 @@
 # 📊 Multimodal Emotion Recognition - Project Status
 
 **Date**: January 28, 2026  
-**Current Status**: 50% Complete - Core models trained, frontend redesigned, project cleaned
+**Current Status**: 65% Complete - Core models trained, Gradio demo fully functional with video analysis, FFmpeg integrated
 
 ---
 
@@ -23,31 +23,33 @@
 ### Phase 2: Backend API (FastAPI)
 - ✅ Server running on port 8000
 - ✅ Model loading and inference working
-- ✅ 6 out of 7 endpoints implemented:
+- ✅ 7 out of 7 endpoints implemented:
   - ✅ `GET /` - Health check
   - ✅ `POST /api/emotions` - Get emotion list
   - ✅ `POST /api/status` - System status
   - ✅ `POST /api/predict/facial` - Facial emotion prediction
   - ✅ `POST /api/predict/speech` - Speech emotion prediction
   - ✅ `POST /api/predict/video` - Video analysis
-  - ❌ `POST /api/predict/combined` - **MISSING** (needed for Tab 2)
+  - ✅ `POST /api/predict/combined` - Combined facial + speech prediction
 
-### Phase 3: Frontend UI (React)
-- ✅ Complete redesign matching Gradio interface
+### Phase 3: Frontend UI (Gradio Demo)
+- ✅ Complete Gradio interface implemented
 - ✅ 4-tab navigation:
-  - ✅ Tab 1: Separate Testing (facial & speech independent)
-  - ⏳ Tab 2: Combined Analysis (blocked - missing endpoint)
-  - ✅ Tab 3: Video Analysis
+  - ✅ Tab 1: Facial Emotion (webcam/upload)
+  - ✅ Tab 2: Speech Emotion (microphone/upload + waveform visualization)
+  - ✅ Tab 3: Combined Analysis (dual mode: video OR separate image+audio)
   - ✅ Tab 4: Model Information
 
 - ✅ Features implemented:
   - Webcam capture for facial analysis
-  - Audio recording for speech analysis
+  - Audio recording for speech analysis (with waveform visualization)
   - File upload support
   - Confidence score bars with emotion emoji
   - Real-time predictions
-  - Loading states and error handling
-  - Responsive design
+  - Video analysis with automatic frame/audio extraction
+  - Radio button mode selection for combined analysis
+  - Concordance calculation (MATCH/MISMATCH detection)
+  - FFmpeg integration for video processing
 
 - ✅ Styling:
   - Gradio-style gradient backgrounds
@@ -55,7 +57,7 @@
   - WCAG 2.1 AA accessibility
   - Mobile responsive layout
 
-### Phase 4: Project Cleanup (Just Completed)
+### Phase 4: Project Cleanup & Optimization (Completed)
 - ✅ Deleted training code (no longer needed for inference)
   - `src/training/`, `src/data_loaders/`, `src/preprocessing/`, `src/models/`
   
@@ -68,6 +70,23 @@
   - `docs/` folder, `PROJECT_PROGRESS.md`
 
 - ✅ Final size: **3.6GB** (was ~5.3GB)
+
+### Phase 5: Gradio Demo Enhancements (Jan 28, 2026)
+- ✅ FFmpeg installation and integration
+  - Installed via Homebrew with full codec support
+  - Proper audio extraction: PCM 16-bit, mono, 16kHz
+  - Error handling and graceful fallbacks
+  
+- ✅ Video mode implementation for combined analysis
+  - Frame extraction from middle of video file
+  - Audio extraction using FFmpeg subprocess
+  - Automatic resampling to 16kHz for HuBERT
+  - Combined facial + speech analysis from MP4
+  
+- ✅ Dual-mode combined analysis interface
+  - Radio button selector: "🎥 Video Upload (MP4)" vs "📸 Separate Images & Audio"
+  - Dynamic visibility toggling between modes
+  - Proper input handling for both workflows
 
 ---
 
@@ -120,7 +139,7 @@ multimodal-emotion-recognition/
 ## ⏳ PARTIALLY COMPLETE
 
 ### PPRS Requirement Compliance
-- **Overall**: ~50% complete
+- **Overall**: ~55% complete (improved with combined endpoint)
 - **Functional Requirements**: 6/14 complete (43%)
 - **Non-Functional Requirements**: 11/20 complete (55%)
 
@@ -129,11 +148,7 @@ multimodal-emotion-recognition/
    - Current: 71.29% | Target: 90% | Gap: **-18.71%** ⚠️ CRITICAL
    - Biggest blocker for PPRS compliance
 
-2. **Missing backend endpoint**
-   - `/api/predict/combined` not implemented
-   - Causes Tab 2 (Combined Analysis) to fail
-
-3. **No explainability features**
+2. **No explainability features**
    - No Grad-CAM visualization for facial emotion
    - No audio saliency maps for speech emotion
    - PPRS requirement: Both mandatory
@@ -151,8 +166,8 @@ multimodal-emotion-recognition/
 |-----------|--------|-------|
 | Facial Model | ✅ Trained | 71.29% acc (below 90% target) |
 | Speech Model | ✅ Trained | 87.50% acc (above 80% target) ✅ |
-| Backend API | ⏳ 6/7 endpoints | Missing `/api/predict/combined` |
-| Frontend UI | ✅ Complete | 4 tabs, missing endpoint blocks Tab 2 |
+| Backend API | ✅ 7/7 endpoints | All endpoints implemented |
+| Frontend UI | ✅ Complete | 4 tabs, all functional ✅ |
 | Explainability | ❌ Not started | 0% - Need Grad-CAM + saliency |
 | Session Storage | ❌ Not started | 0% - Need SQLite database |
 | Project Size | ✅ Optimized | 3.6GB (1.7GB freed) |

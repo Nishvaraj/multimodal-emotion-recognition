@@ -5,6 +5,8 @@ Tests both modalities simultaneously using Gradio
 
 import os
 from pathlib import Path
+import subprocess
+import tempfile
 
 # Disable safetensors auto-conversion to prevent background download issues
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
@@ -245,6 +247,117 @@ def predict_speech_emotion(audio_input):
         traceback.print_exc()
         return f"❌ Error: {str(e)}", {}
 
+def extract_frame_and_audio_from_video(video_path):
+    """Extract a frame and audio from video file for analysis"""
+    try:
+        import subprocess
+        import tempfile
+        
+        # Read video
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return None, None, "❌ Cannot open video file"
+        
+        # Get middle frame
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        middle_frame_idx = total_frames // 2
+        cap.set(cv2.CAP_PROP_POS_FRAMES, middle_frame_idx)
+        ret, frame = cap.read()
+        cap.release()
+        
+        if not ret:
+            return None, None, "❌ Cannot extract frame from video"
+        
+        # Convert BGR to RGB for image processing
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Extract audio using ffmpeg
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp_audio:
+            audio_path = tmp_audio.name
+        
+        try:
+            # Extract audio from video (WAV format with resampling to 16kHz)
+            subprocess.run([
+                'ffmpeg', '-i', video_path, '-vn', '-acodec', 'pcm_s16le',
+                '-ar', '16000', '-ac', '1', '-y', audio_path
+            ], capture_output=True, check=True, timeout=30)
+            
+            # Load audio using scipy to preserve wav format
+            from scipy.io import wavfile
+            sample_rate, audio_data = wavfile.read(audio_path)
+            
+            # Clean up temp audio file
+            os.remove(audio_path)
+            
+            return frame_rgb, (sample_rate, audio_data), "✅ Video processed successfully"
+        
+        except Exception as e:
+            return frame_rgb, None, f"⚠️ Could not extract audio: {str(e)}"
+    
+    except Exception as e:
+        return None, None, f"❌ Error processing video: {str(e)}"
+
+def predict_combined_from_video(video_input):
+    """Analyze facial and voice from video"""
+    if video_input is None:
+        return None, "❌ No video provided"
+    
+    try:
+        # Extract frame and audio from video
+        frame, audio_data, status_msg = extract_frame_and_audio_from_video(video_input)
+        
+        if frame is None:
+            return None, status_msg
+        
+        # Analyze facial emotion
+        facial_result = predict_facial_emotion(frame)
+        facial_text = facial_result[1] if facial_result else "No facial data"
+        facial_output = facial_result[0] if facial_result else None
+        
+        # Analyze speech emotion
+        if audio_data is not None:
+            speech_result = predict_speech_emotion(audio_data)
+            speech_text = speech_result[0] if speech_result else "No speech data"
+        else:
+            speech_text = "⚠️ No audio extracted from video"
+        
+        # Extract emotions for comparison
+        facial_emotion = None
+        speech_emotion = None
+        
+        if facial_result and facial_result[1] and "**" in facial_result[1]:
+            parts = facial_result[1].split("**")
+            if len(parts) >= 2:
+                facial_emotion = parts[1].lower()
+        
+        if speech_result and speech_result[0] and "**" in speech_result[0]:
+            parts = speech_result[0].split("**")
+            if len(parts) >= 2:
+                speech_emotion = parts[1].lower()
+        
+        # Determine combined emotion
+        comparison = ""
+        if facial_emotion and speech_emotion:
+            if facial_emotion == speech_emotion:
+                comparison = f"\n\n### ✅ **MATCH!** Both indicate {facial_emotion.upper()}"
+            else:
+                comparison = f"\n\n### ⚠️ **MISMATCH** - Face: {facial_emotion.upper()} | Voice: {speech_emotion.upper()}"
+        
+        combined_text = f"""
+        {facial_text}
+        
+        {speech_text}
+        {comparison}
+        """
+        
+        return facial_output, combined_text
+    
+    except Exception as e:
+        print(f"Video analysis error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, f"❌ Error analyzing video: {str(e)}"
+
 def predict_combined(image, audio_input):
     """Combined facial + voice prediction"""
     facial_result = predict_facial_emotion(image)
@@ -318,33 +431,23 @@ def create_interface():
         """)
         
         with gr.Tabs():
-            # Tab 1: Separate Testing
-            with gr.Tab("🔀 Separate Testing"):
-                gr.Markdown("### Test facial and voice emotions separately\n")
+            # Tab 1: Facial Emotion
+            with gr.Tab("📸 Facial Emotion"):
+                gr.Markdown("### Analyze facial emotions from images\n")
                 
                 with gr.Row():
                     with gr.Column():
-                        gr.Markdown("#### 📸 Facial Emotion")
                         facial_image = gr.Image(
                             label="Capture or Upload Image",
                             sources=["webcam", "upload"],
                             type="numpy"
                         )
-                        facial_predict_btn = gr.Button("🔮 Analyze Face", variant="primary")
+                        facial_predict_btn = gr.Button("🔮 Analyze Face", variant="primary", size="lg")
+                    
+                    with gr.Column():
                         facial_emotion_text = gr.Markdown("Waiting for input...")
                         facial_probs = gr.Label(label="📊 Confidence Scores")
                         facial_output = gr.Image(label="✨ Annotated Result")
-                    
-                    with gr.Column():
-                        gr.Markdown("#### 🎤 Voice Emotion")
-                        speech_audio = gr.Audio(
-                            label="Record or Upload Audio",
-                            sources=["microphone", "upload"],
-                            type="numpy"
-                        )
-                        speech_predict_btn = gr.Button("🔮 Analyze Voice", variant="primary")
-                        speech_emotion_text = gr.Markdown("Waiting for input...")
-                        speech_probs = gr.Label(label="📊 Confidence Scores")
                 
                 # Callbacks
                 facial_predict_btn.click(
@@ -352,48 +455,112 @@ def create_interface():
                     inputs=facial_image,
                     outputs=[facial_output, facial_emotion_text, facial_probs]
                 )
+            
+            # Tab 2: Speech Emotion
+            with gr.Tab("🎤 Speech Emotion"):
+                gr.Markdown("### Analyze speech emotions from audio\n")
                 
+                with gr.Row():
+                    with gr.Column():
+                        speech_audio = gr.Audio(
+                            label="Record or Upload Audio",
+                            sources=["microphone", "upload"],
+                            type="numpy"
+                        )
+                        speech_predict_btn = gr.Button("🔮 Analyze Voice", variant="primary", size="lg")
+                    
+                    with gr.Column():
+                        speech_emotion_text = gr.Markdown("Waiting for input...")
+                        speech_probs = gr.Label(label="📊 Confidence Scores")
+                
+                # Callbacks
                 speech_predict_btn.click(
                     fn=predict_speech_emotion,
                     inputs=speech_audio,
                     outputs=[speech_emotion_text, speech_probs]
                 )
             
-            # Tab 2: Combined Testing
+            # Tab 3: Combined Analysis
             with gr.Tab("🔗 Combined Analysis"):
-                gr.Markdown("### Test facial and voice together for multimodal comparison\n")
+                gr.Markdown("### Analyze facial and voice together for multimodal comparison\n")
                 
-                with gr.Row():
-                    with gr.Column(scale=1):
-                        combined_image = gr.Image(
-                            label="📸 Capture or Upload Image",
-                            sources=["webcam", "upload"],
-                            type="numpy"
-                        )
-                    
-                    with gr.Column(scale=1):
-                        combined_audio = gr.Audio(
-                            label="🎤 Record or Upload Audio",
-                            sources=["microphone", "upload"],
-                            type="numpy"
-                        )
-                
-                combined_predict_btn = gr.Button(
-                    "🚀 Analyze Both",
-                    variant="primary",
-                    size="lg"
+                # Mode selection
+                mode = gr.Radio(
+                    choices=["🎥 Video Upload (MP4)", "📸 Separate Images & Audio"],
+                    value="📸 Separate Images & Audio",
+                    label="Choose Analysis Mode",
+                    info="Select how you want to provide input"
                 )
                 
-                combined_output = gr.Image(label="✨ Annotated Face")
-                combined_text = gr.Markdown("Waiting for inputs...")
+                # Video Mode
+                with gr.Group(visible=False) as video_mode_group:
+                    gr.Markdown("#### 🎥 Upload or Record Video\nThe system will automatically extract facial and voice for analysis\n")
+                    
+                    with gr.Row():
+                        video_input = gr.Video(
+                            label="Capture or Upload Video (MP4)",
+                            sources=["webcam", "upload"],
+                            format="mp4"
+                        )
+                        with gr.Column():
+                            video_predict_btn = gr.Button("🎬 Analyze Video", variant="primary", size="lg")
+                            video_emotion_text = gr.Markdown("Waiting for video...")
+                            video_output = gr.Image(label="✨ Extracted Frame")
+                
+                video_predict_btn.click(
+                    fn=predict_combined_from_video,
+                    inputs=video_input,
+                    outputs=[video_output, video_emotion_text]
+                )
+                
+                # Separate Mode
+                with gr.Group(visible=True) as separate_mode_group:
+                    gr.Markdown("#### 📸 Upload Facial Image and Audio Separately\n")
+                    
+                    with gr.Row():
+                        with gr.Column():
+                            combined_image = gr.Image(
+                                label="📸 Capture or Upload Image",
+                                sources=["webcam", "upload"],
+                                type="numpy"
+                            )
+                        
+                        with gr.Column():
+                            combined_audio = gr.Audio(
+                                label="🎤 Record or Upload Audio",
+                                sources=["microphone", "upload"],
+                                type="numpy"
+                            )
+                    
+                    combined_predict_btn = gr.Button(
+                        "🚀 Analyze Both",
+                        variant="primary",
+                        size="lg"
+                    )
+                    
+                    combined_output = gr.Image(label="✨ Annotated Face")
+                    combined_text = gr.Markdown("Waiting for inputs...")
                 
                 combined_predict_btn.click(
                     fn=predict_combined,
                     inputs=[combined_image, combined_audio],
                     outputs=[combined_output, combined_text]
                 )
+                
+                # Toggle between modes
+                def toggle_mode(selected_mode):
+                    if "Video" in selected_mode:
+                        return gr.Group(visible=True), gr.Group(visible=False)
+                    else:
+                        return gr.Group(visible=False), gr.Group(visible=True)
+                
+                mode.change(
+                    fn=toggle_mode,
+                    inputs=mode,
+                    outputs=[video_mode_group, separate_mode_group]
+                )
             
-            # Tab 3: Model Info
+            # Tab 4: Model Info
             with gr.Tab("ℹ️ Model Information"):
                 info_text = f"""
                 ## 📊 Model Details
