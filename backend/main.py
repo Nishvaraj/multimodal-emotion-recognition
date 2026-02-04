@@ -250,11 +250,18 @@ async def health():
 async def predict_facial(file: UploadFile = File(...), explain: bool = False):
     """Predict emotion from image"""
     try:
+        print(f"Received file: {file.filename}, content_type: {file.content_type}")
         contents = await file.read()
+        print(f"File size: {len(contents)} bytes")
+        if len(contents) == 0:
+            return JSONResponse(status_code=400, content={"error": "Empty file received"})
         image = Image.open(BytesIO(contents)).convert('RGB')
         result = predict_facial_emotion(image, generate_explainability=explain)
         return {"success": True, **result} if result else {"success": False, "error": "Prediction failed"}
     except Exception as e:
+        print(f"Error in predict_facial: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 @app.post("/api/predict/speech")
