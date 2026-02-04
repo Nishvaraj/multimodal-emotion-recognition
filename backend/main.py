@@ -11,6 +11,10 @@ from pathlib import Path
 from transformers import AutoImageProcessor, AutoModelForImageClassification, AutoFeatureExtractor, AutoModelForAudioClassification
 import tempfile
 import os
+import json
+from services.explainability import generate_grad_cam_for_prediction
+from services.audio_explainability import generate_audio_saliency_for_prediction
+from services.database import db
 
 app = FastAPI(title="Multi-Modal Emotion Recognition API", version="2.0.0")
 
@@ -100,9 +104,16 @@ def load_speech_model():
         print(f"❌ Error loading speech model: {e}")
         return False
 
-# Load on startup
+# Lazy load on startup (only facial, load speech on first use)
 facial_loaded = load_facial_model()
-speech_loaded = load_speech_model()
+speech_loaded = False  # Will be loaded on first use
+
+# Load speech model on first use to avoid long startup times
+def ensure_speech_model_loaded():
+    global speech_loaded, speech_model
+    if not speech_loaded and speech_model is None:
+        speech_loaded = load_speech_model()
+    return speech_loaded
 
 # ========== VIDEO PROCESSOR ==========
 
@@ -204,19 +215,39 @@ async def health():
 
 @app.post("/api/predict/facial")
 async def predict_facial(file: UploadFile = File(...)):
-    """Predict emotion from image"""
+    """Predict emotion from image with Grad-CAM visualization"""
     try:
         contents = await file.read()
         image = Image.open(BytesIO(contents)).convert('RGB')
         result = predict_facial_emotion(image)
+        
+        if result and vit_model is not None:
+            # Generate Grad-CAM visualization
+            grad_cam_result = generate_grad_cam_for_prediction(
+                image=image,
+                model=vit_model,
+                processor=facial_processor,
+                emotion=result["emotion"],
+                emotion_list=EMOTIONS_FACIAL,
+                confidence=result["confidence"],
+                device=str(DEVICE)
+            )
+            
+            if grad_cam_result.get("success"):
+                result["grad_cam_image"] = grad_cam_result["grad_cam_image"]
+                result["explainability"] = grad_cam_result["heatmap_description"]
+        
         return {"success": True, **result} if result else {"success": False, "error": "Prediction failed"}
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 @app.post("/api/predict/speech")
 async def predict_speech(file: UploadFile = File(...)):
-    """Predict emotion from audio"""
+    """Predict emotion from audio with saliency visualization"""
     try:
+        # Ensure speech model is loaded
+        ensure_speech_model_loaded()
+        
         contents = await file.read()
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
             tmp.write(contents)
@@ -225,6 +256,24 @@ async def predict_speech(file: UploadFile = File(...)):
         try:
             audio, sr = librosa.load(tmp_path, sr=16000)
             result = predict_speech_emotion(audio, sr)
+            
+            if result and speech_model is not None:
+                # Generate audio saliency visualization
+                saliency_result = generate_audio_saliency_for_prediction(
+                    audio=audio,
+                    sr=sr,
+                    model=speech_model,
+                    processor=speech_processor,
+                    emotion=result["emotion"],
+                    emotion_list=EMOTIONS_SPEECH,
+                    confidence=result["confidence"],
+                    device=str(DEVICE)
+                )
+                
+                if saliency_result.get("success"):
+                    result["saliency_map"] = saliency_result["saliency_map"]
+                    result["explainability"] = saliency_result["frequency_description"]
+            
             return {"success": True, **result} if result else {"success": False, "error": "Prediction failed"}
         finally:
             os.unlink(tmp_path)
@@ -235,6 +284,8 @@ async def predict_speech(file: UploadFile = File(...)):
 async def predict_combined(image_file: UploadFile = File(...), audio_file: UploadFile = File(...)):
     """Predict emotions from both image and audio, then compare results"""
     try:
+        # Ensure speech model is loaded
+        ensure_speech_model_loaded()
         # Process image
         image_contents = await image_file.read()
         image = Image.open(BytesIO(image_contents)).convert('RGB')
@@ -313,6 +364,8 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
 async def predict_video_emotion(file: UploadFile = File(...)):
     """Predict emotions from video (facial + speech)"""
     try:
+        # Ensure speech model is loaded
+        ensure_speech_model_loaded()
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
             contents = await file.read()
             tmp.write(contents)
@@ -384,3 +437,205 @@ async def get_models_status():
         "speech": {"loaded": speech_loaded, "accuracy": 0.8750, "emotions": len(EMOTIONS_SPEECH)},
         "device": str(DEVICE)
     }
+
+# ========== SESSION MANAGEMENT ENDPOINTS ==========
+
+@app.post("/api/sessions/create")
+async def create_session(user_name: str = None, notes: str = None):
+    """Create a new session"""
+    try:
+        session_id = db.create_session(user_name=user_name, notes=notes)
+        session = db.get_session(session_id)
+        return {
+            "success": True,
+            "session_id": session_id,
+            "session": session
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.get("/api/sessions")
+async def list_sessions(limit: int = 100):
+    """Get all sessions"""
+    try:
+        sessions = db.get_all_sessions(limit=limit)
+        return {
+            "success": True,
+            "total": len(sessions),
+            "sessions": sessions
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Get session details and predictions"""
+    try:
+        session = db.get_session(session_id)
+        if not session:
+            return JSONResponse(status_code=404, content={"error": "Session not found"})
+        
+        predictions = db.get_session_predictions(session_id)
+        concordance = db.get_session_concordance(session_id)
+        stats = db.get_statistics(session_id)
+        
+        return {
+            "success": True,
+            "session": session,
+            "predictions": predictions,
+            "concordance_records": concordance,
+            "statistics": stats
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.post("/api/sessions/{session_id}/save_prediction")
+async def save_prediction(
+    session_id: str,
+    modality: str,
+    emotion: str,
+    confidence: float,
+    probabilities: dict = None,
+    grad_cam_image: str = None,
+    saliency_map: str = None
+):
+    """Save a prediction to a session"""
+    try:
+        session = db.get_session(session_id)
+        if not session:
+            return JSONResponse(status_code=404, content={"error": "Session not found"})
+        
+        prediction_id = db.save_prediction(
+            session_id=session_id,
+            modality=modality,
+            emotion=emotion,
+            confidence=confidence,
+            probabilities=probabilities,
+            grad_cam_image=grad_cam_image,
+            saliency_map=saliency_map
+        )
+        
+        return {
+            "success": True,
+            "prediction_id": prediction_id
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.post("/api/sessions/{session_id}/save_concordance")
+async def save_concordance(
+    session_id: str,
+    facial_emotion: str,
+    facial_confidence: float,
+    speech_emotion: str,
+    speech_confidence: float,
+    concordance_status: str
+):
+    """Save a concordance record"""
+    try:
+        session = db.get_session(session_id)
+        if not session:
+            return JSONResponse(status_code=404, content={"error": "Session not found"})
+        
+        record_id = db.save_concordance(
+            session_id=session_id,
+            facial_emotion=facial_emotion,
+            facial_confidence=facial_confidence,
+            speech_emotion=speech_emotion,
+            speech_confidence=speech_confidence,
+            concordance_status=concordance_status
+        )
+        
+        return {
+            "success": True,
+            "record_id": record_id
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.get("/api/sessions/{session_id}/export/csv")
+async def export_session_csv(session_id: str):
+    """Export session as CSV"""
+    try:
+        session = db.get_session(session_id)
+        if not session:
+            return JSONResponse(status_code=404, content={"error": "Session not found"})
+        
+        csv_data = db.export_session_csv(session_id)
+        
+        return {
+            "success": True,
+            "format": "csv",
+            "data": csv_data,
+            "filename": f"emotion_session_{session_id}.csv"
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.get("/api/sessions/{session_id}/export/json")
+async def export_session_json(session_id: str):
+    """Export session as JSON"""
+    try:
+        session = db.get_session(session_id)
+        if not session:
+            return JSONResponse(status_code=404, content={"error": "Session not found"})
+        
+        json_data = db.export_session_json(session_id)
+        
+        return {
+            "success": True,
+            "format": "json",
+            "data": json.loads(json_data),
+            "filename": f"emotion_session_{session_id}.json"
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a session and its predictions"""
+    try:
+        session = db.get_session(session_id)
+        if not session:
+            return JSONResponse(status_code=404, content={"error": "Session not found"})
+        
+        db.delete_session(session_id)
+        
+        return {
+            "success": True,
+            "message": f"Session {session_id} deleted"
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+@app.get("/api/sessions/{session_id}/statistics")
+async def get_session_statistics(session_id: str):
+    """Get session statistics"""
+    try:
+        session = db.get_session(session_id)
+        if not session:
+            return JSONResponse(status_code=404, content={"error": "Session not found"})
+        
+        stats = db.get_statistics(session_id)
+        
+        return {
+            "success": True,
+            "statistics": stats
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+
+# ========== SERVER STARTUP ==========
+
+if __name__ == "__main__":
+    import uvicorn
+    print("\n" + "="*60)
+    print("🚀 Multi-Modal Emotion Recognition API")
+    print("="*60)
+    print("📍 Running on: http://127.0.0.1:8000")
+    print("📊 Docs: http://127.0.0.1:8000/docs")
+    print("✓ Facial Model: Loaded")
+    print(f"✓ Speech Model: Will load on first use (lazy loading)")
+    print("="*60 + "\n")
+    uvicorn.run(app, host="127.0.0.1", port=8000)

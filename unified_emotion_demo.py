@@ -24,8 +24,15 @@ from transformers import (
     AutoModelForAudioClassification
 )
 import gradio as gr
+import requests
+from io import BytesIO
+from datetime import datetime
+from scipy.io import wavfile
 
 # ==================== Configuration ====================
+# Backend API
+BACKEND_API = "http://127.0.0.1:8000/api"
+
 print("\n" + "="*60)
 print("🎭 UNIFIED FACIAL + VOICE EMOTION RECOGNITION DEMO")
 print("="*60)
@@ -193,6 +200,58 @@ def predict_facial_emotion(image):
         traceback.print_exc()
         return image, f"❌ Error: {str(e)}", {}
 
+def predict_facial_emotion_with_gradcam(image):
+    """Predict emotion from facial image WITH Grad-CAM explainability via backend"""
+    if image is None:
+        return None, "❌ No image provided", {}, None
+    
+    try:
+        # Convert image to PIL
+        if isinstance(image, np.ndarray):
+            if len(image.shape) == 3 and image.shape[2] == 4:
+                image = image[:,:,:3]
+            pil_image = Image.fromarray(image.astype('uint8'), 'RGB')
+        else:
+            pil_image = image.convert('RGB')
+        
+        # Send to backend for Grad-CAM
+        img_byte_arr = BytesIO()
+        pil_image.save(img_byte_arr, format='PNG')
+        img_byte_arr.seek(0)
+        
+        response = requests.post(
+            f"{BACKEND_API}/predict/facial",
+            files={'file': ('image.png', img_byte_arr, 'image/png')}
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                emotion = data.get('emotion', 'unknown')
+                confidence = data.get('confidence', 0)
+                probabilities = data.get('probabilities', {})
+                grad_cam_image = data.get('grad_cam_image')
+                
+                result_text = f"### 😊 Facial Emotion: **{emotion.upper()}** ({confidence:.1%})\\n\\n🔍 **Grad-CAM:** Heatmap shows facial regions that influenced the prediction. Red = high impact."
+                
+                # Decode Grad-CAM image
+                gradcam_display = None
+                if grad_cam_image:
+                    if isinstance(grad_cam_image, str) and not grad_cam_image.startswith('data:'):
+                        gradcam_display = f"data:image/png;base64,{grad_cam_image}"
+                    else:
+                        gradcam_display = grad_cam_image
+                
+                return np.array(pil_image), result_text, probabilities, gradcam_display
+        
+        return None, f"❌ Backend error: {response.status_code}", {}, None
+    
+    except Exception as e:
+        print(f"Grad-CAM error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, f"❌ Error: {str(e)}", {}, None
+
 def predict_speech_emotion(audio_input):
     """Predict emotion from voice"""
     if audio_input is None:
@@ -246,6 +305,101 @@ def predict_speech_emotion(audio_input):
         import traceback
         traceback.print_exc()
         return f"❌ Error: {str(e)}", {}
+
+def predict_speech_emotion_with_saliency(audio_input):
+    """Predict emotion from voice WITH saliency map via backend"""
+    if audio_input is None:
+        return "❌ No audio provided", {}, None
+    
+    try:
+        sample_rate, audio_data = audio_input
+        
+        # Handle stereo
+        if len(audio_data.shape) > 1:
+            audio_data = np.mean(audio_data, axis=1)
+        
+        # Normalize
+        audio_data = audio_data.astype(np.float32)
+        if np.max(np.abs(audio_data)) > 1:
+            audio_data = audio_data / np.max(np.abs(audio_data))
+        
+        # Save to temporary WAV file
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+            wavfile.write(tmp.name, sample_rate, (audio_data * 32767).astype(np.int16))
+            temp_path = tmp.name
+        
+        try:
+            with open(temp_path, 'rb') as audio_file:
+                response = requests.post(
+                    f"{BACKEND_API}/predict/speech",
+                    files={'file': ('audio.wav', audio_file, 'audio/wav')}
+                )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success'):
+                    emotion = data.get('emotion', 'unknown')
+                    confidence = data.get('confidence', 0)
+                    probabilities = data.get('probabilities', {})
+                    saliency_map = data.get('saliency_map')
+                    
+                    result_text = f"### 🎤 Voice Emotion: **{emotion.upper()}** ({confidence:.1%})\\n\\n🔊 **Saliency Map:** Shows audio frequencies most important for prediction."
+                    
+                    saliency_display = None
+                    if saliency_map:
+                        if isinstance(saliency_map, str) and not saliency_map.startswith('data:'):
+                            saliency_display = f"data:image/png;base64,{saliency_map}"
+                        else:
+                            saliency_display = saliency_map
+                    
+                    return result_text, probabilities, saliency_display
+            
+            return f"❌ Backend error: {response.status_code}", {}, None
+        
+        finally:
+            os.remove(temp_path)
+    
+    except Exception as e:
+        print(f"Saliency error: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"❌ Error: {str(e)}", {}, None
+
+def fetch_all_sessions():
+    """Fetch all sessions from database"""
+    try:
+        response = requests.get(f"{BACKEND_API.replace('/api', '')}/api/sessions")
+        if response.status_code == 200:
+            sessions = response.json().get('sessions', [])
+            if sessions:
+                table_data = [[s.get('session_id', '?'), s.get('date', '?'), s.get('facial_emotion', 'N/A'), s.get('speech_emotion', 'N/A'), s.get('concordance', 'N/A')] for s in sessions]
+                return table_data
+    except Exception as e:
+        print(f"Error fetching sessions: {e}")
+    return [["No sessions", "-", "-", "-", "-"]]
+
+def get_session_details(session_id):
+    """Get details for a specific session"""
+    try:
+        response = requests.get(f"{BACKEND_API.replace('/api', '')}/api/sessions/{session_id}")
+        if response.status_code == 200:
+            session = response.json()
+            details = f"### 📊 Session Details\\n\\n**ID:** `{session.get('session_id', 'N/A')}`\\n**Date:** {session.get('date', 'N/A')}\\n\\n**Facial:** {session.get('facial_emotion', 'N/A')} ({session.get('facial_confidence', 'N/A')})\\n**Speech:** {session.get('speech_emotion', 'N/A')} ({session.get('speech_confidence', 'N/A')})\\n**Concordance:** {session.get('concordance', 'N/A')}"
+            return details
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+    return "❌ Not found"
+
+def delete_session(session_id):
+    """Delete a session"""
+    try:
+        response = requests.delete(f"{BACKEND_API.replace('/api', '')}/api/sessions/{session_id}")
+        if response.status_code == 200:
+            return f"✅ Deleted: `{session_id}`"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+    return "❌ Failed"
 
 def extract_frame_and_audio_from_video(video_path):
     """Extract a frame and audio from video file for analysis"""
@@ -415,7 +569,7 @@ def create_interface():
     }
     """
     
-    with gr.Blocks(title="🎭 Facial + Voice Emotion Recognition", css=css, theme=gr.themes.Soft()) as demo:
+    with gr.Blocks(title="🎭 Facial + Voice Emotion Recognition") as demo:
         
         # Header
         gr.Markdown("""
@@ -560,7 +714,100 @@ def create_interface():
                     outputs=[video_mode_group, separate_mode_group]
                 )
             
-            # Tab 4: Model Info
+            # Tab 5: Explainability (Grad-CAM & Saliency)
+            with gr.Tab("🔍 Explainability"):
+                gr.Markdown("### Model Decision-Making with Grad-CAM & Saliency\\n")
+                gr.Markdown("Understand which facial regions and audio frequencies influence predictions\\n")
+                
+                with gr.Tabs():
+                    # Grad-CAM Tab
+                    with gr.Tab("📸 Facial Grad-CAM"):
+                        with gr.Row():
+                            with gr.Column():
+                                gradcam_image = gr.Image(
+                                    label="Capture or Upload Image",
+                                    sources=["webcam", "upload"],
+                                    type="numpy"
+                                )
+                                gradcam_btn = gr.Button("🔥 Generate Grad-CAM", variant="primary", size="lg")
+                            
+                            with gr.Column():
+                                gradcam_text = gr.Markdown("Waiting for input...")
+                                gradcam_output = gr.Image(label="🔥 Grad-CAM Heatmap")
+                                gradcam_probs = gr.Label(label="📊 Confidence Scores")
+                        
+                        gradcam_btn.click(
+                            fn=predict_facial_emotion_with_gradcam,
+                            inputs=gradcam_image,
+                            outputs=[gradcam_image, gradcam_text, gradcam_probs, gradcam_output]
+                        )
+                    
+                    # Saliency Tab
+                    with gr.Tab("🎤 Audio Saliency"):
+                        with gr.Row():
+                            with gr.Column():
+                                saliency_audio = gr.Audio(
+                                    label="Record or Upload Audio",
+                                    sources=["microphone", "upload"],
+                                    type="numpy"
+                                )
+                                saliency_btn = gr.Button("📊 Generate Saliency", variant="primary", size="lg")
+                            
+                            with gr.Column():
+                                saliency_text = gr.Markdown("Waiting for input...")
+                                saliency_output = gr.Image(label="📊 Saliency Heatmap")
+                                saliency_probs = gr.Label(label="📊 Confidence Scores")
+                        
+                        saliency_btn.click(
+                            fn=predict_speech_emotion_with_saliency,
+                            inputs=saliency_audio,
+                            outputs=[saliency_text, saliency_probs, saliency_output]
+                        )
+            
+            # Tab 6: Session History (Database)
+            with gr.Tab("💾 Session History"):
+                gr.Markdown("### View and Manage Saved Analysis Sessions\\n")
+                
+                with gr.Row():
+                    refresh_btn = gr.Button("🔄 Refresh Sessions", variant="primary", size="lg")
+                
+                sessions_table = gr.Dataframe(
+                    label="📋 Sessions",
+                    headers=["Session ID", "Date", "Face Emotion", "Voice Emotion", "Concordance"],
+                    interactive=False
+                )
+                
+                def load_sessions():
+                    return fetch_all_sessions()
+                
+                refresh_btn.click(fn=load_sessions, outputs=sessions_table)
+                
+                gr.Markdown("---")
+                gr.Markdown("### Session Details\\n")
+                
+                with gr.Row():
+                    session_id_input = gr.Textbox(
+                        label="Session ID",
+                        placeholder="Enter session ID to view details"
+                    )
+                    view_btn = gr.Button("👁️ View Details", variant="primary")
+                    delete_btn = gr.Button("🗑️ Delete", variant="stop")
+                
+                session_details = gr.Markdown("Select a session ID to view details")
+                
+                view_btn.click(
+                    fn=get_session_details,
+                    inputs=session_id_input,
+                    outputs=session_details
+                )
+                
+                delete_btn.click(
+                    fn=delete_session,
+                    inputs=session_id_input,
+                    outputs=session_details
+                )
+            
+            # Tab 7: Model Info
             with gr.Tab("ℹ️ Model Information"):
                 info_text = f"""
                 ## 📊 Model Details
@@ -613,10 +860,22 @@ if __name__ == "__main__":
     print("🚀 Launching Unified Emotion Recognition Demo...")
     print(f"   URL: http://localhost:7860\n")
     
+    css = """
+    .emotion-container {
+        padding: 20px;
+        border-radius: 10px;
+        margin: 10px 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    """
+    
     demo = create_interface()
     demo.launch(
         server_name="127.0.0.1",
         server_port=7860,
         share=False,
-        show_error=True
+        show_error=True,
+        theme=gr.themes.Soft(),
+        css=css
     )
