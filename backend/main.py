@@ -11,6 +11,13 @@ from pathlib import Path
 from transformers import AutoImageProcessor, AutoModelForImageClassification, AutoFeatureExtractor, AutoModelForAudioClassification
 import tempfile
 import os
+import sys
+
+# Add services to path
+sys.path.insert(0, str(Path(__file__).parent))
+
+# Import explainability module
+from services.explainability import generate_grad_cam, generate_audio_saliency, create_combined_visualization
 
 app = FastAPI(title="Multi-Modal Emotion Recognition API", version="2.0.0")
 
@@ -140,7 +147,7 @@ class VideoProcessor:
 
 # ========== PREDICTION FUNCTIONS ==========
 
-def predict_facial_emotion(image: Image.Image):
+def predict_facial_emotion(image: Image.Image, generate_explainability: bool = False):
     """Predict emotion from image"""
     try:
         if vit_model is None:
@@ -153,16 +160,34 @@ def predict_facial_emotion(image: Image.Image):
             probs = torch.softmax(torch.from_numpy(logits), dim=0).numpy()
         
         top_idx = np.argmax(probs)
-        return {
+        result = {
             "emotion": EMOTIONS_FACIAL[top_idx],
             "confidence": float(probs[top_idx]),
             "probabilities": {e: float(p) for e, p in zip(EMOTIONS_FACIAL, probs)}
         }
+        
+        # Generate Grad-CAM if requested
+        if generate_explainability:
+            try:
+                original_base64, heatmap_base64 = generate_grad_cam(
+                    image,
+                    vit_model,
+                    facial_processor,
+                    top_idx,
+                    EMOTIONS_FACIAL,
+                    DEVICE
+                )
+                result["original_image"] = original_base64
+                result["grad_cam"] = heatmap_base64
+            except Exception as e:
+                print(f"Warning: Could not generate Grad-CAM: {e}")
+        
+        return result
     except Exception as e:
         print(f"Error predicting facial emotion: {e}")
         return None
 
-def predict_speech_emotion(audio: np.ndarray, sr: int = 16000):
+def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explainability: bool = False):
     """Predict emotion from audio"""
     try:
         if speech_model is None:
@@ -178,11 +203,30 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000):
             probs = np.exp(logits) / np.sum(np.exp(logits))
         
         top_idx = np.argmax(probs)
-        return {
+        result = {
             "emotion": EMOTIONS_SPEECH[top_idx],
             "confidence": float(probs[top_idx]),
             "probabilities": {e: float(p) for e, p in zip(EMOTIONS_SPEECH, probs)}
         }
+        
+        # Generate audio saliency if requested
+        if generate_explainability:
+            try:
+                spec_base64, saliency_base64 = generate_audio_saliency(
+                    audio,
+                    speech_model,
+                    speech_processor,
+                    top_idx,
+                    EMOTIONS_SPEECH,
+                    DEVICE,
+                    sr=16000
+                )
+                result["spectrogram"] = spec_base64
+                result["saliency"] = saliency_base64
+            except Exception as e:
+                print(f"Warning: Could not generate audio saliency: {e}")
+        
+        return result
     except Exception as e:
         print(f"Error predicting speech emotion: {e}")
         return None
@@ -203,18 +247,18 @@ async def health():
     }
 
 @app.post("/api/predict/facial")
-async def predict_facial(file: UploadFile = File(...)):
+async def predict_facial(file: UploadFile = File(...), explain: bool = False):
     """Predict emotion from image"""
     try:
         contents = await file.read()
         image = Image.open(BytesIO(contents)).convert('RGB')
-        result = predict_facial_emotion(image)
+        result = predict_facial_emotion(image, generate_explainability=explain)
         return {"success": True, **result} if result else {"success": False, "error": "Prediction failed"}
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 @app.post("/api/predict/speech")
-async def predict_speech(file: UploadFile = File(...)):
+async def predict_speech(file: UploadFile = File(...), explain: bool = False):
     """Predict emotion from audio"""
     try:
         contents = await file.read()
@@ -224,7 +268,7 @@ async def predict_speech(file: UploadFile = File(...)):
         
         try:
             audio, sr = librosa.load(tmp_path, sr=16000)
-            result = predict_speech_emotion(audio, sr)
+            result = predict_speech_emotion(audio, sr, generate_explainability=explain)
             return {"success": True, **result} if result else {"success": False, "error": "Prediction failed"}
         finally:
             os.unlink(tmp_path)
@@ -232,13 +276,13 @@ async def predict_speech(file: UploadFile = File(...)):
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 @app.post("/api/predict/combined")
-async def predict_combined(image_file: UploadFile = File(...), audio_file: UploadFile = File(...)):
+async def predict_combined(image_file: UploadFile = File(...), audio_file: UploadFile = File(...), explain: bool = False):
     """Predict emotions from both image and audio, then compare results"""
     try:
         # Process image
         image_contents = await image_file.read()
         image = Image.open(BytesIO(image_contents)).convert('RGB')
-        facial_result = predict_facial_emotion(image)
+        facial_result = predict_facial_emotion(image, generate_explainability=explain)
         
         # Process audio
         audio_contents = await audio_file.read()
@@ -248,7 +292,7 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
         
         try:
             audio, sr = librosa.load(tmp_path, sr=16000)
-            speech_result = predict_speech_emotion(audio, sr)
+            speech_result = predict_speech_emotion(audio, sr, generate_explainability=explain)
         finally:
             os.unlink(tmp_path)
         
@@ -286,7 +330,7 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
             combined_emotion = speech_emotion
             combined_confidence = speech_confidence
         
-        return {
+        response = {
             "success": True,
             "facial_emotion": {
                 "emotion": facial_emotion or "unknown",
@@ -306,6 +350,16 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
                 "agreement_details": f"Face: {facial_emotion} (conf: {facial_confidence:.2f}) | Voice: {speech_emotion} (conf: {speech_confidence:.2f})"
             }
         }
+        
+        # Add explainability if requested
+        if explain and facial_result and speech_result:
+            if "grad_cam" in facial_result and "saliency" in speech_result:
+                response["explainability"] = {
+                    "grad_cam": facial_result.get("grad_cam"),
+                    "saliency": speech_result.get("saliency")
+                }
+        
+        return response
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 

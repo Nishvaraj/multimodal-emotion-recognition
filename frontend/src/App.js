@@ -31,6 +31,8 @@ function FacialTab() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [isCameraOn, setIsCameraOn] = useState(false);
+  const [showExplainability, setShowExplainability] = useState(false);
+  const [gradCam, setGradCam] = useState(null);
 
   const handleImageSelect = (e) => {
     const file = e.target.files[0];
@@ -85,14 +87,21 @@ function FacialTab() {
     }
     setLoading(true);
     setError(null);
+    setGradCam(null);
     try {
       const formData = new FormData();
       formData.append('file', imageFile);
-      const response = await axios.post(`${API_BASE}/api/predict/facial`, formData);
+      
+      // Add explain parameter if explainability is enabled
+      const explainParam = showExplainability ? '?explain=true' : '';
+      const response = await axios.post(`${API_BASE}/api/predict/facial${explainParam}`, formData);
       if (response.data.success) {
         setEmotion(response.data.emotion);
         setConfidence(response.data.confidence);
         setProbabilities(response.data.probabilities);
+        if (response.data.grad_cam) {
+          setGradCam(response.data.grad_cam);
+        }
       }
     } catch (err) {
       setError('API Error: ' + err.message);
@@ -128,6 +137,25 @@ function FacialTab() {
       {imagePreview && (
         <>
           <img src={imagePreview} alt="Preview" style={{ width: '100%', maxHeight: '200px', borderRadius: '8px', marginBottom: '10px' }} />
+          
+          {/* Explainability Toggle */}
+          <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '8px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox" 
+                checked={showExplainability} 
+                onChange={(e) => setShowExplainability(e.target.checked)}
+                style={{ cursor: 'pointer', width: '18px', height: '18px' }}
+              />
+              <span style={{ fontWeight: 'bold', fontSize: '14px' }}>
+                🔍 Show Grad-CAM Visualization
+              </span>
+            </label>
+            <p style={{ fontSize: '12px', color: '#666', margin: '5px 0 0 28px' }}>
+              See which facial regions influenced the prediction
+            </p>
+          </div>
+          
           <button className="btn btn-primary" onClick={analyzeFacial} disabled={loading} style={{ width: '100%' }}>
             {loading ? '⏳ Analyzing...' : '🔮 Analyze Face'}
           </button>
@@ -150,6 +178,21 @@ function FacialTab() {
               ))}
             </div>
           )}
+          
+          {/* Grad-CAM Visualization */}
+          {gradCam && (
+            <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '8px', border: '2px solid #4CAF50' }}>
+              <h4 style={{ marginTop: 0 }}>🔥 Grad-CAM Heatmap</h4>
+              <p style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
+                Red regions = areas the model focused on | Blue regions = less important
+              </p>
+              <img 
+                src={`data:image/png;base64,${gradCam}`} 
+                alt="Grad-CAM Heatmap"
+                style={{ width: '100%', maxHeight: '300px', borderRadius: '8px', border: '1px solid #ddd' }}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -169,6 +212,8 @@ function SpeechTab() {
   const streamRef = useRef(null);
   const analyzerRef = useRef(null);
   const canvasAnalyzerRef = useRef(null);
+  const [showExplainability, setShowExplainability] = useState(false);
+  const [saliency, setSaliency] = useState(null);
 
   const startRecording = async () => {
     try {
@@ -262,14 +307,21 @@ function SpeechTab() {
     }
     setLoading(true);
     setError(null);
+    setSaliency(null);
     try {
       const formData = new FormData();
       formData.append('file', audioFile);
-      const response = await axios.post(`${API_BASE}/api/predict/speech`, formData);
+      
+      // Add explain parameter if explainability is enabled
+      const explainParam = showExplainability ? '?explain=true' : '';
+      const response = await axios.post(`${API_BASE}/api/predict/speech${explainParam}`, formData);
       if (response.data.success) {
         setEmotion(response.data.emotion);
         setConfidence(response.data.confidence);
         setProbabilities(response.data.probabilities);
+        if (response.data.saliency) {
+          setSaliency(response.data.saliency);
+        }
       }
     } catch (err) {
       setError('API Error: ' + err.message);
@@ -312,9 +364,29 @@ function SpeechTab() {
         </div>
       </div>
       {audioFile && (
-        <button className="btn btn-primary" onClick={analyzeSpeech} disabled={loading} style={{ width: '100%' }}>
-          {loading ? '⏳ Analyzing...' : '🔮 Analyze Audio'}
-        </button>
+        <>
+          {/* Explainability Toggle */}
+          <div style={{ marginBottom: '15px', marginTop: '15px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '8px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox" 
+                checked={showExplainability} 
+                onChange={(e) => setShowExplainability(e.target.checked)}
+                style={{ cursor: 'pointer', width: '18px', height: '18px' }}
+              />
+              <span style={{ fontWeight: 'bold', fontSize: '14px' }}>
+                📊 Show Audio Saliency Map
+              </span>
+            </label>
+            <p style={{ fontSize: '12px', color: '#666', margin: '5px 0 0 28px' }}>
+              See which frequencies influenced the prediction
+            </p>
+          </div>
+          
+          <button className="btn btn-primary" onClick={analyzeSpeech} disabled={loading} style={{ width: '100%' }}>
+            {loading ? '⏳ Analyzing...' : '🔮 Analyze Audio'}
+          </button>
+        </>
       )}
       {error && <div className="error-message">{error}</div>}
       {emotion && (
@@ -331,6 +403,21 @@ function SpeechTab() {
                   <span>{((probabilities[emo] || 0) * 100).toFixed(1)}%</span>
                 </div>
               ))}
+            </div>
+          )}
+          
+          {/* Audio Saliency Visualization */}
+          {saliency && (
+            <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '8px', border: '2px solid #FF6B6B' }}>
+              <h4 style={{ marginTop: 0 }}>📊 Audio Saliency Map</h4>
+              <p style={{ fontSize: '12px', color: '#666', marginBottom: '10px' }}>
+                Red frequencies = important for prediction | Blue frequencies = less important
+              </p>
+              <img 
+                src={`data:image/png;base64,${saliency}`} 
+                alt="Audio Saliency"
+                style={{ width: '100%', maxHeight: '300px', borderRadius: '8px', border: '1px solid #ddd' }}
+              />
             </div>
           )}
         </div>
@@ -352,6 +439,9 @@ function CombinedTab() {
   const [error, setError] = useState(null);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isRecordingVideo, setIsRecordingVideo] = useState(false);
+  const [showExplainability, setShowExplainability] = useState(false);
+  const [gradCam, setGradCam] = useState(null);
+  const [saliency, setSaliency] = useState(null);
   
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -527,17 +617,32 @@ function CombinedTab() {
     }
     setLoading(true);
     setError(null);
+    setGradCam(null);
+    setSaliency(null);
     try {
       const formData = new FormData();
       formData.append('image_file', imageFile);
       formData.append('audio_file', audioFile);
-      const response = await axios.post(`${API_BASE}/api/predict/combined`, formData);
+      
+      // Add explain parameter if explainability is enabled
+      const explainParam = showExplainability ? '?explain=true' : '';
+      const response = await axios.post(`${API_BASE}/api/predict/combined${explainParam}`, formData);
       if (response.data.success) {
         setFacialEmotion(response.data.facial_emotion.emotion);
         setSpeechEmotion(response.data.speech_emotion.emotion);
         setConcordance(response.data.concordance);
         setFacialProbs(response.data.facial_emotion.probabilities);
         setSpeechProbs(response.data.speech_emotion.probabilities);
+        
+        // Get explainability visualizations if available
+        if (response.data.explainability) {
+          if (response.data.explainability.grad_cam) {
+            setGradCam(response.data.explainability.grad_cam);
+          }
+          if (response.data.explainability.saliency) {
+            setSaliency(response.data.explainability.saliency);
+          }
+        }
       }
     } catch (err) {
       setError('API Error: ' + err.message);
@@ -641,14 +746,34 @@ function CombinedTab() {
       
       {/* ANALYZE SECTION */}
       {imageFile && audioFile && (
-        <button 
-          className="btn btn-primary" 
-          onClick={analyzeCombined} 
-          disabled={loading} 
-          style={{ width: '100%', padding: '12px', fontSize: '16px', marginBottom: '20px' }}
-        >
-          {loading ? '⏳ Analyzing...' : '🚀 Analyze Both'}
-        </button>
+        <>
+          {/* Explainability Toggle */}
+          <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '8px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+              <input 
+                type="checkbox" 
+                checked={showExplainability} 
+                onChange={(e) => setShowExplainability(e.target.checked)}
+                style={{ cursor: 'pointer', width: '18px', height: '18px' }}
+              />
+              <span style={{ fontWeight: 'bold', fontSize: '14px' }}>
+                🔍 Show Explainability (Grad-CAM + Saliency)
+              </span>
+            </label>
+            <p style={{ fontSize: '12px', color: '#666', margin: '5px 0 0 28px' }}>
+              See visualizations of what the models focused on
+            </p>
+          </div>
+          
+          <button 
+            className="btn btn-primary" 
+            onClick={analyzeCombined} 
+            disabled={loading} 
+            style={{ width: '100%', padding: '12px', fontSize: '16px', marginBottom: '20px' }}
+          >
+            {loading ? '⏳ Analyzing...' : '🚀 Analyze Both'}
+          </button>
+        </>
       )}
       
       {error && <div className="error-message">{error}</div>}
@@ -689,6 +814,41 @@ function CombinedTab() {
               )}
             </div>
           </div>
+          
+          {/* Explainability Visualizations */}
+          {(gradCam || saliency) && (
+            <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f0f0f0', borderRadius: '8px' }}>
+              <h4 style={{ marginTop: 0 }}>🔍 Model Explainability</h4>
+              <div className="two-column" style={{ gap: '15px' }}>
+                {gradCam && (
+                  <div style={{ padding: '10px', backgroundColor: 'white', borderRadius: '8px', border: '2px solid #4CAF50' }}>
+                    <h5 style={{ marginTop: 0, marginBottom: '10px' }}>🔥 Facial Grad-CAM</h5>
+                    <p style={{ fontSize: '11px', color: '#666', marginBottom: '10px' }}>
+                      Red = important facial regions | Blue = less important
+                    </p>
+                    <img 
+                      src={`data:image/png;base64,${gradCam}`} 
+                      alt="Grad-CAM"
+                      style={{ width: '100%', borderRadius: '8px', border: '1px solid #ddd' }}
+                    />
+                  </div>
+                )}
+                {saliency && (
+                  <div style={{ padding: '10px', backgroundColor: 'white', borderRadius: '8px', border: '2px solid #FF6B6B' }}>
+                    <h5 style={{ marginTop: 0, marginBottom: '10px' }}>📊 Audio Saliency</h5>
+                    <p style={{ fontSize: '11px', color: '#666', marginBottom: '10px' }}>
+                      Red = important frequencies | Blue = less important
+                    </p>
+                    <img 
+                      src={`data:image/png;base64,${saliency}`} 
+                      alt="Saliency"
+                      style={{ width: '100%', borderRadius: '8px', border: '1px solid #ddd' }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

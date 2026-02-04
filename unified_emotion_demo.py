@@ -7,16 +7,40 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import warnings
 
-# Disable safetensors auto-conversion to prevent background download issues
+# Suppress all warnings and verbose model loading messages
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
 os.environ['TRANSFORMERS_CACHE'] = str(Path(__file__).parent / '.cache' / 'transformers')
+os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
+os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+os.environ['HF_HUB_DISABLE_IMPLICIT_TOKEN'] = '1'
+warnings.filterwarnings('ignore')
+import sys
+# sys.stderr = open(os.devnull, 'w')  # Suppress stderr temporarily during imports
 
 import torch
 import numpy as np
 import librosa
+import librosa.display
 import cv2
 from PIL import Image
+from io import BytesIO
+import matplotlib
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+    HEIF_SUPPORTED = True
+except ImportError:
+    HEIF_SUPPORTED = False
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
+
+# Suppress transformers logging
+import logging
+logging.getLogger('transformers').setLevel(logging.ERROR)
+
 from transformers import (
     AutoImageProcessor, 
     AutoModelForImageClassification,
@@ -24,6 +48,9 @@ from transformers import (
     AutoModelForAudioClassification
 )
 import gradio as gr
+import base64
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable, get_cmap
 
 # ==================== Configuration ====================
 print("\n" + "="*60)
@@ -55,12 +82,16 @@ SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'phase3' / 'hubert_emotion_model.p
 # ==================== Model Loading ====================
 print("\n🔄 Loading Models...")
 
+# Restore stderr after imports are done
+sys.stderr = sys.__stderr__
+
 # Load Facial Emotion Model (ViT)
 print("\n📸 Loading Facial Emotion Model (ViT)...")
 try:
     facial_processor = AutoImageProcessor.from_pretrained(
         'google/vit-base-patch16-224-in21k',
-        trust_remote_code=False
+        trust_remote_code=False,
+        use_fast=False
     )
     vit_model = AutoModelForImageClassification.from_pretrained(
         'google/vit-base-patch16-224-in21k',
@@ -125,27 +156,158 @@ except Exception as e:
 
 print("\n" + "="*60 + "\n")
 
+# ==================== Explainability Functions ====================
+
+def generate_grad_cam(image_array, emotion_idx):
+    """Generate Grad-CAM heatmap for facial emotion"""
+    try:
+        if not facial_model_loaded:
+            return None
+        
+        # Prepare image
+        if isinstance(image_array, np.ndarray):
+            img = Image.fromarray(image_array.astype('uint8')) if image_array.max() > 1 else Image.fromarray((image_array * 255).astype('uint8'))
+        else:
+            img = image_array
+        
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Preprocess
+        inputs = facial_processor(img, return_tensors='pt').to(DEVICE)
+        
+        # Forward pass with gradient tracking
+        inputs['pixel_values'].requires_grad_(True)
+        outputs = vit_model(**inputs)
+        logits = outputs.logits
+        
+        # Compute gradient
+        target_logit = logits[0, emotion_idx]
+        target_logit.backward()
+        
+        # Get gradients
+        grads = inputs['pixel_values'].grad.data.abs()
+        grads = grads.mean(dim=1)[0].cpu().numpy()
+        
+        # Normalize
+        grads = (grads - grads.min()) / (grads.max() - grads.min() + 1e-7)
+        grads = np.uint8(255 * grads)
+        
+        # Resize to original image size
+        grads_resized = cv2.resize(grads, (img.width, img.height))
+        
+        # Create heatmap
+        heatmap = cv2.applyColorMap(grads_resized, cv2.COLORMAP_JET)
+        
+        # Blend with original
+        img_array = np.array(img)
+        if img_array.shape[2] == 3:
+            overlay = cv2.addWeighted(img_array, 0.6, heatmap, 0.4, 0)
+        else:
+            overlay = heatmap
+        
+        return overlay
+    except Exception as e:
+        print(f"Grad-CAM error: {e}")
+        return None
+
+def generate_audio_saliency(audio_data, sample_rate, emotion_idx):
+    """Generate audio saliency map for speech emotion"""
+    try:
+        if not speech_model_loaded:
+            print("Speech model not loaded for saliency")
+            return None
+        
+        # Compute mel-spectrogram
+        mel_spec = librosa.feature.melspectrogram(
+            y=audio_data, sr=sample_rate, n_mels=128, n_fft=2048, hop_length=512
+        )
+        mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+        
+        # Feature extraction and prediction with gradients
+        inputs = speech_processor(audio_data, sampling_rate=sample_rate, 
+                                 return_tensors="pt", padding=True)
+        
+        # Need to enable gradients
+        input_values = inputs['input_values'].to(DEVICE)
+        input_values.requires_grad = True
+        
+        # Forward pass
+        outputs = speech_model(input_values)
+        logits = outputs.logits
+        
+        # Compute gradient
+        target_logit = logits[0, emotion_idx]
+        target_logit.backward()
+        
+        # Get gradients - shape is [1, sequence_length]
+        grads = input_values.grad.data.abs()[0].cpu().numpy()
+        
+        # Normalize gradients
+        grads = (grads - grads.min()) / (grads.max() - grads.min() + 1e-7)
+        
+        # Create visualization
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+        
+        # Plot mel-spectrogram
+        img = librosa.display.specshow(mel_spec_db, sr=sample_rate, hop_length=512, 
+                                       x_axis='time', y_axis='mel', ax=ax1, cmap='viridis')
+        ax1.set_title('Mel-Spectrogram')
+        fig.colorbar(img, ax=ax1, format='%+2.0f dB')
+        
+        # Plot saliency
+        ax2.imshow([grads], aspect='auto', cmap='hot', interpolation='bilinear')
+        ax2.set_title('Saliency (Frequency Importance)')
+        ax2.set_ylabel('Frequency Bins')
+        ax2.set_xlabel('Time Frames')
+        
+        plt.tight_layout()
+        
+        # Convert to image
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        buf.seek(0)
+        saliency_img = Image.open(buf)
+        plt.close(fig)
+        
+        print(f"Generated saliency image: {np.array(saliency_img).shape}")
+        return np.array(saliency_img)
+    except Exception as e:
+        print(f"Audio saliency error: {e}")
+        return None
+
 # ==================== Prediction Functions ====================
 
-def predict_facial_emotion(image):
-    """Predict emotion from facial image"""
+
+def predict_facial_emotion(image, explain=False):
+    """Predict emotion from facial image with optional explainability"""
     if image is None:
-        return None, "❌ No image provided", {}
+        return None, "❌ No image provided", {}, None
     
     try:
         if not facial_model_loaded:
-            return image, "❌ Facial model not loaded", {}
+            return image, "❌ Facial model not loaded", {}, None
         
+        # Handle file paths (e.g., HEIC images)
+        if isinstance(image, str):
+            if image.lower().endswith('.heic') or image.lower().endswith('.heif'):
+                if not HEIF_SUPPORTED:
+                    return None, "❌ HEIC format not supported. Please install pillow-heif.", {}, None
+            img = Image.open(image).convert('RGB')
+            image_array = np.array(img)
         # Convert to RGB
-        if isinstance(image, np.ndarray):
+        elif isinstance(image, np.ndarray):
             if len(image.shape) == 3:
                 if image.shape[2] == 4:  # RGBA
                     image = image[:,:,:3]
                 img = Image.fromarray(image.astype('uint8'), 'RGB')
+                image_array = image[:,:,:3] if image.shape[2] > 3 else image
             else:
                 img = Image.fromarray(image.astype('uint8'), 'L').convert('RGB')
+                image_array = image
         else:
             img = image.convert('RGB')
+            image_array = np.array(img)
         
         # Resize for display
         img_display = img.copy()
@@ -163,6 +325,15 @@ def predict_facial_emotion(image):
         top_idx = np.argmax(probs)
         top_emotion = EMOTIONS_FACIAL[top_idx]
         top_confidence = float(probs[top_idx])
+        
+        # Generate Grad-CAM if requested
+        grad_cam_img = None
+        if explain:
+            print(f"Generating Grad-CAM for emotion {top_emotion} (idx={top_idx})")
+            grad_cam_img = generate_grad_cam(image_array, top_idx)
+            print(f"Grad-CAM generated: {grad_cam_img is not None}")
+            if grad_cam_img is not None:
+                print(f"Grad-CAM shape: {grad_cam_img.shape}")
         
         # Create annotated image
         img_annotated = np.array(img_display)
@@ -185,22 +356,22 @@ def predict_facial_emotion(image):
         prob_dict = {f"{EMOTION_EMOJIS.get(e, '😐')} {e}": float(probs[i]) 
                      for i, e in enumerate(EMOTIONS_FACIAL)}
         
-        return img_annotated, result_text, prob_dict
+        return img_annotated, result_text, prob_dict, grad_cam_img
     
     except Exception as e:
         print(f"Facial prediction error: {e}")
         import traceback
         traceback.print_exc()
-        return image, f"❌ Error: {str(e)}", {}
+        return image, f"❌ Error: {str(e)}", {}, None
 
-def predict_speech_emotion(audio_input):
+def predict_speech_emotion(audio_input, explain=False):
     """Predict emotion from voice"""
     if audio_input is None:
-        return "❌ No audio provided", {}
+        return "❌ No audio provided", {}, None
     
     try:
         if not speech_model_loaded:
-            return "❌ Speech model not loaded", {}
+            return "❌ Speech model not loaded", {}, None
         
         # Extract audio data
         sample_rate, audio_data = audio_input
@@ -234,18 +405,27 @@ def predict_speech_emotion(audio_input):
         top_emotion = EMOTIONS_SPEECH[top_idx]
         top_confidence = float(probs[top_idx])
         
+        # Generate saliency if requested
+        saliency_img = None
+        if explain:
+            print(f"Generating saliency for emotion {top_emotion} (idx={top_idx})")
+            saliency_img = generate_audio_saliency(audio_data, sample_rate, top_idx)
+            print(f"Saliency generated: {saliency_img is not None}")
+            if saliency_img is not None:
+                print(f"Saliency shape: {saliency_img.shape}")
+        
         # Format results
         result_text = f"### 🎤 Voice Emotion: **{top_emotion.upper()}** ({top_confidence:.1%})"
         prob_dict = {f"{EMOTION_EMOJIS.get(e, '😐')} {e}": float(probs[i]) 
                      for i, e in enumerate(EMOTIONS_SPEECH)}
         
-        return result_text, prob_dict
+        return result_text, prob_dict, saliency_img
     
     except Exception as e:
         print(f"Speech prediction error: {e}")
         import traceback
         traceback.print_exc()
-        return f"❌ Error: {str(e)}", {}
+        return f"❌ Error: {str(e)}", {}, None
 
 def extract_frame_and_audio_from_video(video_path):
     """Extract a frame and audio from video file for analysis"""
@@ -297,27 +477,30 @@ def extract_frame_and_audio_from_video(video_path):
     except Exception as e:
         return None, None, f"❌ Error processing video: {str(e)}"
 
-def predict_combined_from_video(video_input):
-    """Analyze facial and voice from video"""
+def predict_combined_from_video(video_input, explain_facial=False, explain_speech=False):
+    """Analyze facial and voice from video with optional explainability"""
     if video_input is None:
-        return None, "❌ No video provided"
+        return None, "❌ No video provided", None, None
     
     try:
         # Extract frame and audio from video
         frame, audio_data, status_msg = extract_frame_and_audio_from_video(video_input)
         
         if frame is None:
-            return None, status_msg
+            return None, status_msg, None, None
         
-        # Analyze facial emotion
-        facial_result = predict_facial_emotion(frame)
+        # Analyze facial emotion with optional explainability
+        facial_result = predict_facial_emotion(frame, explain_facial)
         facial_text = facial_result[1] if facial_result else "No facial data"
         facial_output = facial_result[0] if facial_result else None
+        facial_gradcam = facial_result[3] if facial_result and len(facial_result) > 3 else None
         
-        # Analyze speech emotion
+        # Analyze speech emotion with optional explainability
+        speech_saliency = None
         if audio_data is not None:
-            speech_result = predict_speech_emotion(audio_data)
+            speech_result = predict_speech_emotion(audio_data, explain_speech)
             speech_text = speech_result[0] if speech_result else "No speech data"
+            speech_saliency = speech_result[2] if speech_result and len(speech_result) > 2 else None
         else:
             speech_text = "⚠️ No audio extracted from video"
         
@@ -330,7 +513,7 @@ def predict_combined_from_video(video_input):
             if len(parts) >= 2:
                 facial_emotion = parts[1].lower()
         
-        if speech_result and speech_result[0] and "**" in speech_result[0]:
+        if audio_data is not None and speech_result and speech_result[0] and "**" in speech_result[0]:
             parts = speech_result[0].split("**")
             if len(parts) >= 2:
                 speech_emotion = parts[1].lower()
@@ -350,13 +533,13 @@ def predict_combined_from_video(video_input):
         {comparison}
         """
         
-        return facial_output, combined_text
+        return facial_output, combined_text, facial_gradcam, speech_saliency
     
     except Exception as e:
         print(f"Video analysis error: {e}")
         import traceback
         traceback.print_exc()
-        return None, f"❌ Error analyzing video: {str(e)}"
+        return None, f"❌ Error analyzing video: {str(e)}", None, None
 
 def predict_combined(image, audio_input):
     """Combined facial + voice prediction"""
@@ -442,18 +625,31 @@ def create_interface():
                             sources=["webcam", "upload"],
                             type="numpy"
                         )
+                        facial_explain = gr.Checkbox(
+                            label="🔍 Show Grad-CAM Visualization",
+                            value=False,
+                            info="See which facial regions influenced the prediction"
+                        )
                         facial_predict_btn = gr.Button("🔮 Analyze Face", variant="primary", size="lg")
                     
                     with gr.Column():
                         facial_emotion_text = gr.Markdown("Waiting for input...")
                         facial_probs = gr.Label(label="📊 Confidence Scores")
                         facial_output = gr.Image(label="✨ Annotated Result")
+                        facial_gradcam = gr.Image(label="🔥 Grad-CAM Heatmap")
                 
                 # Callbacks
+                def facial_predict_with_explain(image, explain):
+                    img_out, text_out, probs_out, gradcam_out = predict_facial_emotion(image, explain)
+                    if gradcam_out is not None:
+                        return img_out, text_out, probs_out, gradcam_out
+                    else:
+                        return img_out, text_out, probs_out, None
+                
                 facial_predict_btn.click(
-                    fn=predict_facial_emotion,
-                    inputs=facial_image,
-                    outputs=[facial_output, facial_emotion_text, facial_probs]
+                    fn=facial_predict_with_explain,
+                    inputs=[facial_image, facial_explain],
+                    outputs=[facial_output, facial_emotion_text, facial_probs, facial_gradcam]
                 )
             
             # Tab 2: Speech Emotion
@@ -467,17 +663,30 @@ def create_interface():
                             sources=["microphone", "upload"],
                             type="numpy"
                         )
+                        speech_explain = gr.Checkbox(
+                            label="📊 Show Audio Saliency Map",
+                            value=False,
+                            info="See which frequencies influenced the prediction"
+                        )
                         speech_predict_btn = gr.Button("🔮 Analyze Voice", variant="primary", size="lg")
                     
                     with gr.Column():
                         speech_emotion_text = gr.Markdown("Waiting for input...")
                         speech_probs = gr.Label(label="📊 Confidence Scores")
+                        speech_saliency = gr.Image(label="📊 Audio Saliency Map")
                 
                 # Callbacks
+                def speech_predict_with_explain(audio, explain):
+                    text_out, probs_out, saliency_out = predict_speech_emotion(audio, explain)
+                    if saliency_out is not None:
+                        return text_out, probs_out, saliency_out
+                    else:
+                        return text_out, probs_out, None
+                
                 speech_predict_btn.click(
-                    fn=predict_speech_emotion,
-                    inputs=speech_audio,
-                    outputs=[speech_emotion_text, speech_probs]
+                    fn=speech_predict_with_explain,
+                    inputs=[speech_audio, speech_explain],
+                    outputs=[speech_emotion_text, speech_probs, speech_saliency]
                 )
             
             # Tab 3: Combined Analysis
@@ -503,14 +712,27 @@ def create_interface():
                             format="mp4"
                         )
                         with gr.Column():
+                            video_explain_facial = gr.Checkbox(
+                                label="🔍 Show Facial Grad-CAM",
+                                value=False
+                            )
+                            video_explain_speech = gr.Checkbox(
+                                label="📊 Show Audio Saliency",
+                                value=False
+                            )
                             video_predict_btn = gr.Button("🎬 Analyze Video", variant="primary", size="lg")
                             video_emotion_text = gr.Markdown("Waiting for video...")
-                            video_output = gr.Image(label="✨ Extracted Frame")
+                    
+                    video_output = gr.Image(label="✨ Extracted Frame")
+                    
+                    with gr.Row():
+                        video_gradcam = gr.Image(label="🔥 Facial Grad-CAM")
+                        video_saliency = gr.Image(label="📊 Audio Saliency")
                 
                 video_predict_btn.click(
                     fn=predict_combined_from_video,
-                    inputs=video_input,
-                    outputs=[video_output, video_emotion_text]
+                    inputs=[video_input, video_explain_facial, video_explain_speech],
+                    outputs=[video_output, video_emotion_text, video_gradcam, video_saliency]
                 )
                 
                 # Separate Mode
@@ -532,6 +754,16 @@ def create_interface():
                                 type="numpy"
                             )
                     
+                    with gr.Row():
+                        combined_explain_facial = gr.Checkbox(
+                            label="🔍 Show Facial Grad-CAM",
+                            value=False
+                        )
+                        combined_explain_speech = gr.Checkbox(
+                            label="📊 Show Audio Saliency",
+                            value=False
+                        )
+                    
                     combined_predict_btn = gr.Button(
                         "🚀 Analyze Both",
                         variant="primary",
@@ -540,11 +772,35 @@ def create_interface():
                     
                     combined_output = gr.Image(label="✨ Annotated Face")
                     combined_text = gr.Markdown("Waiting for inputs...")
+                    
+                    with gr.Row():
+                        combined_gradcam = gr.Image(label="🔥 Facial Grad-CAM")
+                        combined_saliency = gr.Image(label="📊 Audio Saliency")
+                
+                def combined_predict_with_explain(image, audio, explain_facial, explain_speech):
+                    # Get facial prediction
+                    facial_result = predict_facial_emotion(image, explain_facial)
+                    facial_img = facial_result[0] if facial_result else None
+                    facial_gradcam = facial_result[3] if facial_result and len(facial_result) > 3 else None
+                    
+                    # Get speech prediction
+                    speech_result = predict_speech_emotion(audio, explain_speech)
+                    speech_saliency = speech_result[2] if speech_result and len(speech_result) > 2 else None
+                    
+                    # Get combined text
+                    _, combined_txt = predict_combined(image, audio)
+                    
+                    return (
+                        facial_img,
+                        combined_txt,
+                        facial_gradcam,
+                        speech_saliency
+                    )
                 
                 combined_predict_btn.click(
-                    fn=predict_combined,
-                    inputs=[combined_image, combined_audio],
-                    outputs=[combined_output, combined_text]
+                    fn=combined_predict_with_explain,
+                    inputs=[combined_image, combined_audio, combined_explain_facial, combined_explain_speech],
+                    outputs=[combined_output, combined_text, combined_gradcam, combined_saliency]
                 )
                 
                 # Toggle between modes
