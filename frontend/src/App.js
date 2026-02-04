@@ -10,7 +10,6 @@ const EMOTION_EMOJIS = {
   'neutral': '😐',
   'sad': '😢',
   'surprise': '😲',
-  'surprised': '😲',
   'calm': '😌',
   'fearful': '😨',
 };
@@ -27,7 +26,6 @@ function FacialTab() {
   const [emotion, setEmotion] = useState(null);
   const [confidence, setConfidence] = useState(null);
   const [probabilities, setProbabilities] = useState(null);
-  const [gradCamImage, setGradCamImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const videoRef = useRef(null);
@@ -42,7 +40,6 @@ function FacialTab() {
       reader.onload = (evt) => {
         setImagePreview(evt.target.result);
         setEmotion(null);
-        setGradCamImage(null);
       };
       reader.readAsDataURL(file);
     }
@@ -50,16 +47,11 @@ function FacialTab() {
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         setIsCameraOn(true);
         setError(null);
-        
-        // Ensure video plays
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current.play().catch(err => console.log('Play error:', err));
-        };
       }
     } catch (err) {
       setError('Cannot access camera');
@@ -101,9 +93,6 @@ function FacialTab() {
         setEmotion(response.data.emotion);
         setConfidence(response.data.confidence);
         setProbabilities(response.data.probabilities);
-        if (response.data.grad_cam_image) {
-          setGradCamImage(response.data.grad_cam_image);
-        }
       }
     } catch (err) {
       setError('API Error: ' + err.message);
@@ -122,23 +111,7 @@ function FacialTab() {
             <button className="btn btn-primary" onClick={startCamera}>📷 Start Webcam</button>
           ) : (
             <>
-              <video 
-                ref={videoRef} 
-                autoPlay
-                playsInline 
-                style={{ 
-                  width: '100%', 
-                  height: 'auto',
-                  minHeight: '300px',
-                  maxHeight: '400px',
-                  borderRadius: '8px', 
-                  marginBottom: '10px', 
-                  backgroundColor: '#000',
-                  border: '2px solid #667eea',
-                  objectFit: 'cover',
-                  display: 'block'
-                }} 
-              />
+              <video ref={videoRef} autoPlay playsInline style={{ width: '100%', borderRadius: '8px', marginBottom: '10px', maxHeight: '300px' }} />
               <canvas ref={canvasRef} width="320" height="240" style={{ display: 'none' }} />
               <div className="button-group">
                 <button className="btn btn-success" onClick={capturePhoto}>📸 Capture</button>
@@ -164,12 +137,6 @@ function FacialTab() {
       {emotion && (
         <div className="results-box">
           <h3>{EMOTION_EMOJIS[emotion]} {emotion.toUpperCase()} ({(confidence * 100).toFixed(1)}%)</h3>
-          {gradCamImage && (
-            <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '8px' }}>
-              <p style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>🔍 Grad-CAM Heatmap (shows which facial regions influenced the prediction):</p>
-              <img src={gradCamImage.startsWith('data:') ? gradCamImage : `data:image/png;base64,${gradCamImage}`} alt="Grad-CAM" style={{ width: '100%', borderRadius: '6px' }} />
-            </div>
-          )}
           {probabilities && (
             <div className="probabilities">
               {EMOTIONS_FACIAL.map((emo) => (
@@ -194,7 +161,6 @@ function SpeechTab() {
   const [emotion, setEmotion] = useState(null);
   const [confidence, setConfidence] = useState(null);
   const [probabilities, setProbabilities] = useState(null);
-  const [saliencyMap, setSaliencyMap] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -210,6 +176,7 @@ function SpeechTab() {
       streamRef.current = stream;
       chunksRef.current = [];
       
+      // Setup audio visualization
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const analyser = audioContext.createAnalyser();
       const source = audioContext.createMediaStreamSource(stream);
@@ -226,6 +193,8 @@ function SpeechTab() {
       mediaRecorder.start();
       setIsRecording(true);
       setError(null);
+      
+      // Start visualization
       visualizeAudio(analyser);
     } catch (err) {
       setError('Cannot access microphone');
@@ -242,6 +211,7 @@ function SpeechTab() {
     
     const draw = () => {
       if (!isRecording) return;
+      
       requestAnimationFrame(draw);
       analyser.getByteFrequencyData(dataArray);
       
@@ -253,11 +223,14 @@ function SpeechTab() {
       
       const sliceWidth = canvas.width / bufferLength;
       let x = 0;
+      
       for (let i = 0; i < bufferLength; i++) {
         const v = dataArray[i] / 128.0;
         const y = (v * canvas.height) / 2;
+        
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
+        
         x += sliceWidth;
       }
       ctx.lineTo(canvas.width, canvas.height / 2);
@@ -279,7 +252,6 @@ function SpeechTab() {
     if (file) {
       setAudioFile(file);
       setEmotion(null);
-      setSaliencyMap(null);
     }
   };
 
@@ -298,9 +270,6 @@ function SpeechTab() {
         setEmotion(response.data.emotion);
         setConfidence(response.data.confidence);
         setProbabilities(response.data.probabilities);
-        if (response.data.saliency_map) {
-          setSaliencyMap(response.data.saliency_map);
-        }
       }
     } catch (err) {
       setError('API Error: ' + err.message);
@@ -324,7 +293,13 @@ function SpeechTab() {
                 ref={canvasAnalyzerRef} 
                 width="300" 
                 height="80" 
-                style={{ width: '100%', border: '2px solid #667eea', borderRadius: '4px', marginBottom: '10px', backgroundColor: '#f0f0f0' }} 
+                style={{ 
+                  width: '100%', 
+                  border: '2px solid #667eea', 
+                  borderRadius: '4px', 
+                  marginBottom: '10px', 
+                  backgroundColor: '#f0f0f0' 
+                }} 
               />
               <button className="btn btn-danger" onClick={stopRecording}>⏹️ Stop Recording</button>
             </>
@@ -345,12 +320,6 @@ function SpeechTab() {
       {emotion && (
         <div className="results-box">
           <h3>{EMOTION_EMOJIS[emotion]} {emotion.toUpperCase()} ({(confidence * 100).toFixed(1)}%)</h3>
-          {saliencyMap && (
-            <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '8px' }}>
-              <p style={{ fontSize: '0.9em', color: '#666', marginBottom: '10px' }}>🎵 Frequency Saliency Map (shows which frequencies influenced the prediction):</p>
-              <img src={saliencyMap.startsWith('data:') ? saliencyMap : `data:image/png;base64,${saliencyMap}`} alt="Saliency Map" style={{ width: '100%', borderRadius: '6px' }} />
-            </div>
-          )}
           {probabilities && (
             <div className="probabilities">
               {EMOTIONS_SPEECH.map((emo) => (
@@ -374,7 +343,6 @@ function CombinedTab() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [audioFile, setAudioFile] = useState(null);
-  const [videoFile, setVideoFile] = useState(null);
   const [facialEmotion, setFacialEmotion] = useState(null);
   const [speechEmotion, setSpeechEmotion] = useState(null);
   const [concordance, setConcordance] = useState(null);
@@ -390,6 +358,15 @@ function CombinedTab() {
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
+  const analyzerRef = useRef(null);
+  const canvasAnalyzerRef = useRef(null);
+
+  // Ensure video plays when camera is on
+  useEffect(() => {
+    if (isCameraOn && videoRef.current && videoRef.current.srcObject) {
+      videoRef.current.play().catch(err => console.log('Video play error:', err));
+    }
+  }, [isCameraOn]);
 
   const startVideoRecording = async () => {
     try {
@@ -398,169 +375,149 @@ function CombinedTab() {
         audio: true 
       });
       
+      // Store stream first
       streamRef.current = stream;
       
+      // Set up video element
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current.play().catch(err => console.log('Play error:', err));
-        };
+        
+        // Wait a moment for the video element to be ready, then play it
+        setTimeout(() => {
+          if (videoRef.current) {
+            videoRef.current.play().catch(err => {
+              console.error('Video play failed:', err);
+              setError('Video playback error: ' + err.message);
+            });
+          }
+        }, 100);
       }
       
       chunksRef.current = [];
       setIsCameraOn(true);
       setError(null);
       
-      // Start recording with audio
-      const mediaRecorder = new MediaRecorder(stream);
+      // Setup audio visualization
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const audioSource = audioContext.createMediaStreamSource(stream);
+      audioSource.connect(analyser);
+      analyzerRef.current = analyser;
+      
+      // Start video + audio recording
+      const mediaRecorder = new MediaRecorder(stream, { 
+        mimeType: 'video/webm;codecs=vp8,opus' 
+      });
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
       mediaRecorder.start();
       setIsRecordingVideo(true);
+      
+      // Visualize audio during recording
+      visualizeAudio(analyser);
     } catch (err) {
       setError('Cannot access camera/microphone: ' + err.message);
       console.error('Camera/microphone error:', err);
     }
   };
 
-  const stopVideoRecording = async () => {
+  const visualizeAudio = (analyser) => {
+    const canvas = canvasAnalyzerRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const draw = () => {
+      if (!isRecordingVideo) return;
+      
+      requestAnimationFrame(draw);
+      analyser.getByteFrequencyData(dataArray);
+      
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#667eea';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      
+      const sliceWidth = canvas.width * 1.0 / bufferLength;
+      let x = 0;
+      
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * canvas.height) / 2;
+        
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        
+        x += sliceWidth;
+      }
+      ctx.lineTo(canvas.width, canvas.height / 2);
+      ctx.stroke();
+    };
+    draw();
+  };
+
+  const stopVideoRecording = () => {
     if (mediaRecorderRef.current && isRecordingVideo) {
-      return new Promise((resolve) => {
-        mediaRecorderRef.current.onstop = async () => {
-          const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' });
+      mediaRecorderRef.current.onstop = () => {
+        const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' });
+        
+        // Extract frame from video
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(videoBlob);
+        video.muted = true;
+        
+        video.onloadedmetadata = () => {
+          // Extract frame from middle of video for better quality
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
           
-          // Extract both frame and audio from video
-          try {
-            const videoElement = document.createElement('video');
-            videoElement.src = URL.createObjectURL(videoBlob);
-            videoElement.muted = true;
-            
-            videoElement.onloadedmetadata = async () => {
-              // Extract frame
-              const canvas = document.createElement('canvas');
-              canvas.width = videoElement.videoWidth;
-              canvas.height = videoElement.videoHeight;
-              const ctx = canvas.getContext('2d');
-              
-              videoElement.currentTime = Math.min(videoElement.duration * 0.5, 2);
-              
-              videoElement.onseeked = async () => {
-                ctx.drawImage(videoElement, 0, 0);
-                canvas.toBlob((imageBlob) => {
-                  if (imageBlob) {
-                    setImageFile(imageBlob);
-                    const reader = new FileReader();
-                    reader.onload = (evt) => setImagePreview(evt.target.result);
-                    reader.readAsDataURL(imageBlob);
-                  }
-                });
-                
-                // Extract audio using Web Audio API
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const mediaSource = audioContext.createMediaElementAudioSource(videoElement);
-                const destination = audioContext.createMediaStreamAudioDestination();
-                mediaSource.connect(destination);
-                
-                const audioRecorder = new MediaRecorder(destination.stream);
-                const audioChunks = [];
-                
-                audioRecorder.ondataavailable = (e) => audioChunks.push(e.data);
-                audioRecorder.onstop = () => {
-                  const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                  const audioFile = new File([audioBlob], 'extracted_audio.wav', { type: 'audio/wav' });
-                  setAudioFile(audioFile);
-                };
-                
-                audioRecorder.start();
-                videoElement.play().catch(err => console.log('Play error:', err));
-                
-                setTimeout(() => {
-                  audioRecorder.stop();
-                  videoElement.pause();
-                }, videoElement.duration * 1000 + 500);
-              };
-            };
-          } catch (err) {
-            console.error('Audio extraction error:', err);
-            setError('Audio extraction failed, please try again');
-          }
+          // Seek to middle of video
+          video.currentTime = Math.min(video.duration * 0.5, 2);
           
-          resolve();
+          video.onseeked = () => {
+            ctx.drawImage(video, 0, 0);
+            canvas.toBlob((imageBlob) => {
+              if (imageBlob) {
+                setImageFile(imageBlob);
+                const reader = new FileReader();
+                reader.onload = (evt) => setImagePreview(evt.target.result);
+                reader.readAsDataURL(imageBlob);
+              }
+            });
+          };
         };
         
-        mediaRecorderRef.current.stop();
-        setIsRecordingVideo(false);
-        
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
-        }
-      });
+        // Note: Audio extraction from webm is complex, user must upload audio separately
+        setError('Video captured! Now upload audio file to complete the analysis.');
+      };
+      
+      mediaRecorderRef.current.stop();
+      setIsRecordingVideo(false);
+      
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
     }
   };
 
-  const handleVideoUpload = async (e) => {
+  const handleImageSelect = (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const videoElement = document.createElement('video');
-      videoElement.src = URL.createObjectURL(file);
-      videoElement.muted = true;
-      
-      videoElement.onloadedmetadata = async () => {
-        // Extract frame
-        const canvas = document.createElement('canvas');
-        canvas.width = videoElement.videoWidth;
-        canvas.height = videoElement.videoHeight;
-        const ctx = canvas.getContext('2d');
-        
-        videoElement.currentTime = Math.min(videoElement.duration * 0.5, 2);
-        
-        videoElement.onseeked = async () => {
-          ctx.drawImage(videoElement, 0, 0);
-          canvas.toBlob((imageBlob) => {
-            if (imageBlob) {
-              setImageFile(imageBlob);
-              const reader = new FileReader();
-              reader.onload = (evt) => setImagePreview(evt.target.result);
-              reader.readAsDataURL(imageBlob);
-            }
-          });
-          
-          // Extract audio using Web Audio API
-          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          const mediaSource = audioContext.createMediaElementAudioSource(videoElement);
-          const destination = audioContext.createMediaStreamAudioDestination();
-          mediaSource.connect(destination);
-          
-          const audioRecorder = new MediaRecorder(destination.stream);
-          const audioChunks = [];
-          
-          audioRecorder.ondataavailable = (e) => audioChunks.push(e.data);
-          audioRecorder.onstop = () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-            const audioFile = new File([audioBlob], 'extracted_audio.wav', { type: 'audio/wav' });
-            setAudioFile(audioFile);
-            setLoading(false);
-            setError('✅ Video processed! Image and audio extracted. Ready to analyze.');
-          };
-          
-          audioRecorder.start();
-          videoElement.play().catch(err => console.log('Play error:', err));
-          
-          setTimeout(() => {
-            audioRecorder.stop();
-            videoElement.pause();
-          }, videoElement.duration * 1000 + 500);
-        };
-      };
-    } catch (err) {
-      setError('Error processing video: ' + err.message);
-      setLoading(false);
+    if (file) {
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onload = (evt) => setImagePreview(evt.target.result);
+      reader.readAsDataURL(file);
     }
+  };
+
+  const handleAudioSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) setAudioFile(file);
   };
 
   const analyzeCombined = async () => {
@@ -591,129 +548,125 @@ function CombinedTab() {
 
   return (
     <div className="tab-content">
-      <h2>🎥 Combined Video Analysis</h2>
-      <p style={{ color: '#666', marginBottom: '20px' }}>Record a video with your face and voice, or upload a video file to analyze both emotions simultaneously.</p>
+      <h2>🎥 Combined Video + Analysis</h2>
       
-      {/* OPTION 1: RECORD VIDEO */}
-      <div style={{ marginBottom: '30px', paddingBottom: '25px', borderBottom: '2px solid #eee' }}>
-        <h3 style={{ color: '#667eea', marginBottom: '15px' }}>🎥 Option 1: Record Video</h3>
-        <p style={{ color: '#666', fontSize: '0.95em', marginBottom: '15px' }}>Record yourself speaking with your face visible. We'll extract the face and voice automatically.</p>
+      {/* VIDEO RECORDING SECTION */}
+      <div style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #ddd' }}>
+        <h3>🎬 Record Video (webcam + voice)</h3>
+        <p style={{ color: '#666', fontSize: '0.9em', marginBottom: '10px' }}>Record a video with your face and voice together - it will automatically extract image and audio for analysis</p>
         
         {!isCameraOn ? (
-          <button className="btn btn-primary" onClick={startVideoRecording} style={{ padding: '12px 24px', fontSize: '16px' }}>
-            🎬 Start Recording
+          <button className="btn btn-primary" onClick={startVideoRecording} style={{ padding: '12px 20px', fontSize: '16px' }}>
+            🎥 Start Video Recording
           </button>
         ) : (
-          <div>
+          <>
             <video 
               ref={videoRef} 
-              autoPlay
-              playsInline
+              autoPlay 
+              playsInline 
+              muted
               style={{ 
-                width: '100%',
+                width: '100%', 
                 height: 'auto',
                 minHeight: '300px',
-                maxHeight: '400px',
                 borderRadius: '8px', 
-                marginBottom: '15px', 
+                marginBottom: '10px', 
                 backgroundColor: '#000',
                 border: '3px solid #667eea',
-                objectFit: 'cover',
-                display: 'block'
+                display: 'block',
+                objectFit: 'cover'
               }} 
             />
             <canvas ref={canvasRef} width="320" height="240" style={{ display: 'none' }} />
             
-            <p style={{ color: '#e74c3c', fontWeight: '600', marginBottom: '10px' }}>
-              🔴 RECORDING...
-            </p>
+            {isRecordingVideo && (
+              <>
+                <p style={{ color: '#e74c3c', fontWeight: '600', marginBottom: '10px' }}>
+                  🔴 RECORDING... (Video + Audio)
+                </p>
+                <canvas 
+                  ref={canvasAnalyzerRef} 
+                  width="600" 
+                  height="100" 
+                  style={{ 
+                    width: '100%', 
+                    border: '2px solid #667eea', 
+                    borderRadius: '4px', 
+                    marginBottom: '10px', 
+                    backgroundColor: '#f0f0f0' 
+                  }} 
+                />
+              </>
+            )}
             
-            <button 
-              className="btn btn-danger" 
-              onClick={stopVideoRecording} 
-              style={{ padding: '10px 20px', fontSize: '15px' }}
-            >
-              ⏹️ Stop Recording
-            </button>
+            <div className="button-group">
+              <button className="btn btn-danger" onClick={stopVideoRecording} style={{ padding: '10px 20px' }}>
+                ⏹️ Stop & Extract
+              </button>
+            </div>
+          </>
+        )}
+        
+        {imageFile && audioFile && (
+          <p style={{ color: '#27ae60', fontWeight: '600', marginTop: '10px' }}>
+            ✅ Image & Audio extracted from video
+          </p>
+        )}
+      </div>
+      
+      {/* MANUAL UPLOAD SECTION */}
+      <div style={{ marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #ddd' }}>
+        <h3>📤 Or Upload Separately</h3>
+        <div className="two-column">
+          <div className="column">
+            <h4>📸 Image File</h4>
+            <input type="file" accept="image/*" onChange={handleImageSelect} className="file-input" />
+            {imagePreview && (
+              <img 
+                src={imagePreview} 
+                alt="Preview" 
+                style={{ width: '100%', maxHeight: '150px', marginTop: '10px', borderRadius: '8px' }} 
+              />
+            )}
+            {imageFile && <p style={{ color: '#667eea', fontWeight: '600' }}>✅ Ready</p>}
           </div>
-        )}
-        
-        {imageFile && audioFile && (
-          <p style={{ color: '#27ae60', fontWeight: '600', marginTop: '10px' }}>
-            ✅ Video processed! Face and voice extracted.
-          </p>
-        )}
+          <div className="column">
+            <h4>🎤 Audio File</h4>
+            <input type="file" accept="audio/*" onChange={handleAudioSelect} className="file-input" />
+            {audioFile && <p style={{ color: '#667eea', fontWeight: '600' }}>✅ Ready</p>}
+          </div>
+        </div>
       </div>
       
-      {/* OPTION 2: UPLOAD VIDEO */}
-      <div style={{ marginBottom: '25px' }}>
-        <h3 style={{ color: '#667eea', marginBottom: '15px' }}>📤 Option 2: Upload Video File</h3>
-        <p style={{ color: '#666', fontSize: '0.95em', marginBottom: '15px' }}>Upload an MP4 file with both audio and video. We'll extract the face and voice.</p>
-        
-        <input 
-          type="file" 
-          accept="video/mp4,video/webm,video/*" 
-          onChange={handleVideoUpload} 
-          className="file-input" 
-          disabled={loading}
-        />
-        
-        {imageFile && audioFile && (
-          <p style={{ color: '#27ae60', fontWeight: '600', marginTop: '10px' }}>
-            ✅ Video processed! Face and voice extracted.
-          </p>
-        )}
-      </div>
-      
-      {error && !error.includes('✅') && <div className="error-message">{error}</div>}
-      {error && error.includes('✅') && <div style={{ backgroundColor: '#d4edda', color: '#155724', padding: '12px', borderRadius: '6px', marginBottom: '15px', border: '1px solid #c3e6cb' }}>{error}</div>}
-      
-      {/* ANALYZE BUTTON */}
-      {imageFile && audioFile && !facialEmotion && (
+      {/* ANALYZE SECTION */}
+      {imageFile && audioFile && (
         <button 
           className="btn btn-primary" 
           onClick={analyzeCombined} 
           disabled={loading} 
-          style={{ width: '100%', padding: '14px', marginBottom: '20px', fontSize: '16px', fontWeight: '600' }}
+          style={{ width: '100%', padding: '12px', fontSize: '16px', marginBottom: '20px' }}
         >
-          {loading ? '⏳ Analyzing...' : '🚀 Analyze Both Face & Voice'}
+          {loading ? '⏳ Analyzing...' : '🚀 Analyze Both'}
         </button>
       )}
       
-      {/* RESULTS */}
+      {error && <div className="error-message">{error}</div>}
+      
+      {/* RESULTS SECTION */}
       {facialEmotion && speechEmotion && (
         <div className="results-box">
-          <div style={{ 
-            padding: '15px', 
-            backgroundColor: concordance === 'MATCH' ? '#d4edda' : '#fff3cd', 
-            borderRadius: '8px', 
-            marginBottom: '15px',
-            border: `2px solid ${concordance === 'MATCH' ? '#28a745' : '#ffc107'}`
-          }}>
-            <h3 style={{ margin: '0 0 10px 0' }}>
-              {concordance === 'MATCH' ? '✅ MATCH!' : '⚠️ MISMATCH'}
-            </h3>
-            <p style={{ margin: '0', fontSize: '1.1em' }}>
-              Face: <strong>{EMOTION_EMOJIS[facialEmotion]} {facialEmotion}</strong> | 
-              Voice: <strong>{EMOTION_EMOJIS[speechEmotion]} {speechEmotion}</strong>
-            </p>
-          </div>
-          
-          {imagePreview && (
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ fontSize: '0.95em', color: '#666', marginBottom: '8px' }}>📸 Extracted Frame:</p>
-              <img src={imagePreview} alt="Extracted Frame" style={{ width: '100%', maxHeight: '200px', borderRadius: '6px', border: '2px solid #667eea' }} />
-            </div>
-          )}
-          
+          <h3 style={{ marginBottom: '15px' }}>
+            📊 Results - {concordance === 'MATCH' ? '✅ MATCH!' : '⚠️ MISMATCH'}
+          </h3>
           <div className="two-column">
             <div className="column results-col">
               <h4>📸 Facial: {EMOTION_EMOJIS[facialEmotion]} {facialEmotion.toUpperCase()}</h4>
               {facialProbs && (
                 <div className="probabilities">
-                  {Object.entries(facialProbs).slice(0, 5).map(([emo, prob]) => (
+                  {Object.entries(facialProbs).slice(0, 4).map(([emo, prob]) => (
                     <div key={emo} className="prob-item" style={{ fontSize: '0.85em' }}>
-                      <span>{EMOTION_EMOJIS[emo] || '😐'} {emo}</span>
+                      <span>{EMOTION_EMOJIS[emo]} {emo}</span>
                       <div className="prob-bar"><div className="prob-fill" style={{ width: `${prob * 100}%` }} /></div>
                       <span>{(prob * 100).toFixed(0)}%</span>
                     </div>
@@ -725,9 +678,9 @@ function CombinedTab() {
               <h4>🎤 Speech: {EMOTION_EMOJIS[speechEmotion]} {speechEmotion.toUpperCase()}</h4>
               {speechProbs && (
                 <div className="probabilities">
-                  {Object.entries(speechProbs).slice(0, 5).map(([emo, prob]) => (
+                  {Object.entries(speechProbs).slice(0, 4).map(([emo, prob]) => (
                     <div key={emo} className="prob-item" style={{ fontSize: '0.85em' }}>
-                      <span>{EMOTION_EMOJIS[emo] || '😐'} {emo}</span>
+                      <span>{EMOTION_EMOJIS[emo]} {emo}</span>
                       <div className="prob-bar"><div className="prob-fill" style={{ width: `${prob * 100}%` }} /></div>
                       <span>{(prob * 100).toFixed(0)}%</span>
                     </div>
@@ -736,23 +689,6 @@ function CombinedTab() {
               )}
             </div>
           </div>
-          
-          <button 
-            className="btn btn-primary" 
-            onClick={() => {
-              setImageFile(null);
-              setAudioFile(null);
-              setVideoFile(null);
-              setImagePreview(null);
-              setFacialEmotion(null);
-              setSpeechEmotion(null);
-              setConcordance(null);
-              setError(null);
-            }} 
-            style={{ width: '100%', marginTop: '15px' }}
-          >
-            🔄 Analyze Another Video
-          </button>
         </div>
       )}
     </div>
@@ -791,219 +727,399 @@ function ModelInfoTab() {
   );
 }
 
-function SessionsTab() {
-  const [sessions, setSessions] = useState([]);
-  const [selectedSession, setSelectedSession] = useState(null);
-  const [sessionDetails, setSessionDetails] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const fetchSessions = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await axios.get(`${API_BASE}/api/sessions`);
-      if (response.data.success) {
-        setSessions(response.data.sessions || []);
-      }
-    } catch (err) {
-      setError('Failed to fetch sessions: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchSessionDetails = async (sessionId) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await axios.get(`${API_BASE}/api/sessions/${sessionId}`);
-      if (response.data.success) {
-        setSelectedSession(sessionId);
-        setSessionDetails(response.data);
-      }
-    } catch (err) {
-      setError('Failed to fetch session details: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const exportSession = async (sessionId, format) => {
-    try {
-      const response = await axios.get(`${API_BASE}/api/sessions/${sessionId}/export/${format}`);
-      if (response.data.success) {
-        const data = format === 'csv' ? response.data.data : JSON.stringify(response.data.data, null, 2);
-        const blob = new Blob([data], { type: format === 'csv' ? 'text/csv' : 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = response.data.filename;
-        link.click();
-        URL.revokeObjectURL(url);
-      }
-    } catch (err) {
-      alert('Export failed: ' + err.message);
-    }
-  };
-
-  const deleteSession = async (sessionId) => {
-    if (!window.confirm('Are you sure you want to delete this session?')) return;
-    
-    try {
-      const response = await axios.delete(`${API_BASE}/api/sessions/${sessionId}`);
-      if (response.data.success) {
-        setSessions(sessions.filter(s => s.id !== sessionId));
-        setSelectedSession(null);
-        setSessionDetails(null);
-        alert('Session deleted successfully');
-      }
-    } catch (err) {
-      alert('Delete failed: ' + err.message);
-    }
-  };
-
-  return (
-    <div className="tab-content">
-      <h2>💾 Session History</h2>
-      
-      <button className="btn btn-primary" onClick={fetchSessions} disabled={loading} style={{ marginBottom: '20px' }}>
-        {loading ? '⏳ Loading...' : '🔄 Load Sessions'}
-      </button>
-
-      {error && <div className="error-message">{error}</div>}
-
-      {sessions.length === 0 ? (
-        <p style={{ color: '#999', textAlign: 'center', padding: '40px 20px' }}>📭 No sessions found. Click "Load Sessions" to refresh.</p>
-      ) : (
-        <div className="two-column" style={{ marginBottom: '20px' }}>
-          <div className="column">
-            <h3>📋 Sessions ({sessions.length})</h3>
-            <div style={{ 
-              border: '1px solid #ddd', 
-              borderRadius: '8px', 
-              maxHeight: '500px', 
-              overflowY: 'auto' 
-            }}>
-              {sessions.map(session => (
-                <div
-                  key={session.id}
-                  onClick={() => fetchSessionDetails(session.id)}
-                  style={{
-                    padding: '12px',
-                    borderBottom: '1px solid #eee',
-                    cursor: 'pointer',
-                    backgroundColor: selectedSession === session.id ? '#e8f4f8' : '#fff',
-                    transition: 'background-color 0.2s',
-                    userSelect: 'none'
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = selectedSession === session.id ? '#e8f4f8' : '#f5f5f5'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = selectedSession === session.id ? '#e8f4f8' : '#fff'}
-                >
-                  <div style={{ fontWeight: '600', color: '#667eea' }}>
-                    👤 {session.user_name || 'Anonymous'} 
-                  </div>
-                  <div style={{ fontSize: '0.85em', color: '#999', marginTop: '4px' }}>
-                    {session.total_predictions} predictions
-                  </div>
-                  <div style={{ fontSize: '0.8em', color: '#bbb' }}>
-                    {new Date(session.created_at).toLocaleString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="column">
-            <h3>📊 Session Details</h3>
-            {selectedSession && sessionDetails ? (
-              <div style={{ border: '1px solid #ddd', borderRadius: '8px', padding: '15px', maxHeight: '500px', overflowY: 'auto' }}>
-                <div style={{ marginBottom: '15px', paddingBottom: '15px', borderBottom: '1px solid #eee' }}>
-                  <p style={{ margin: '0 0 8px 0' }}><strong>👤 User:</strong> {sessionDetails.session.user_name || 'Anonymous'}</p>
-                  <p style={{ margin: '0 0 8px 0' }}><strong>📅 Created:</strong> {new Date(sessionDetails.session.created_at).toLocaleString()}</p>
-                  <p style={{ margin: '0' }}><strong>📈 Predictions:</strong> {sessionDetails.session.total_predictions}</p>
-                </div>
-
-                {sessionDetails.statistics && (
-                  <div style={{ marginBottom: '15px', padding: '12px', backgroundColor: '#f0f7ff', borderRadius: '6px', border: '1px solid #e0f0ff' }}>
-                    <strong style={{ color: '#667eea' }}>📊 Statistics</strong>
-                    <div style={{ fontSize: '0.9em', marginTop: '8px', lineHeight: '1.6' }}>
-                      <div>✅ Matches: <strong>{sessionDetails.statistics.concordance_matches}</strong></div>
-                      <div>⚠️ Mismatches: <strong>{sessionDetails.statistics.concordance_mismatches}</strong></div>
-                      <div>🎯 Avg Confidence: <strong>{(sessionDetails.statistics.average_confidence * 100).toFixed(1)}%</strong></div>
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '15px' }}>
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={() => exportSession(selectedSession, 'csv')}
-                    style={{ flex: '1', minWidth: '100px', fontSize: '0.9em', padding: '8px' }}
-                  >
-                    📥 CSV
-                  </button>
-                  <button 
-                    className="btn btn-primary" 
-                    onClick={() => exportSession(selectedSession, 'json')}
-                    style={{ flex: '1', minWidth: '100px', fontSize: '0.9em', padding: '8px' }}
-                  >
-                    📥 JSON
-                  </button>
-                  <button 
-                    className="btn btn-danger" 
-                    onClick={() => deleteSession(selectedSession)}
-                    style={{ flex: '1', minWidth: '100px', fontSize: '0.9em', padding: '8px' }}
-                  >
-                    🗑️ Delete
-                  </button>
-                </div>
-
-                {sessionDetails.predictions && sessionDetails.predictions.length > 0 && (
-                  <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #eee' }}>
-                    <strong style={{ color: '#667eea' }}>🔍 Recent Predictions ({sessionDetails.predictions.length})</strong>
-                    <div style={{ marginTop: '10px', fontSize: '0.85em' }}>
-                      {sessionDetails.predictions.slice(0, 5).map((pred, idx) => (
-                        <div key={idx} style={{ 
-                          padding: '8px', 
-                          backgroundColor: '#f9f9f9', 
-                          borderRadius: '4px', 
-                          marginBottom: '6px',
-                          borderLeft: '3px solid #667eea'
-                        }}>
-                          <div><strong>{pred.modality}:</strong> {EMOTION_EMOJIS[pred.emotion] || '😐'} {pred.emotion}</div>
-                          <div style={{ color: '#999', marginTop: '2px' }}>Confidence: {(pred.confidence * 100).toFixed(1)}%</div>
-                        </div>
-                      ))}
-                      {sessionDetails.predictions.length > 5 && (
-                        <div style={{ color: '#999', fontStyle: 'italic', marginTop: '8px', textAlign: 'center', padding: '8px' }}>
-                          ... and {sessionDetails.predictions.length - 5} more
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p style={{ color: '#999', textAlign: 'center', padding: '40px 20px' }}>👈 Select a session to view details</p>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function App() {
   const [activeTab, setActiveTab] = useState(0);
+  
+  // Separate Testing - Facial
+  const [facialImage, setFacialImage] = useState(null);
+  const [facialImageUrl, setFacialImageUrl] = useState(null);
+  const [facialAnnotatedUrl, setFacialAnnotatedUrl] = useState(null);
+  const [facialEmotion, setFacialEmotion] = useState(null);
+  const [facialConfidence, setFacialConfidence] = useState(null);
+  const [facialProbs, setFacialProbs] = useState(null);
+  const [isProcessingFacial, setIsProcessingFacial] = useState(false);
+  const facialVideoRef = useRef(null);
+  const facialCanvasRef = useRef(null);
+  
+  // Separate Testing - Speech
+  const [speechAudio, setSpeechAudio] = useState(null);
+  const [speechEmotion, setSpeechEmotion] = useState(null);
+  const [speechConfidence, setSpeechConfidence] = useState(null);
+  const [speechProbs, setSpeechProbs] = useState(null);
+  const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
+  const [isRecordingSpeech, setIsRecordingSpeech] = useState(false);
+  const speechAudioRef = useRef(null);
+  const speechMediaRecorderRef = useRef(null);
+  const speechChunksRef = useRef([]);
+  const speechStreamRef = useRef(null);
+  
+  // Combined Testing
+  const [combinedImage, setCombinedImage] = useState(null);
+  const [combinedImageUrl, setCombinedImageUrl] = useState(null);
+  const [combinedAnnotatedUrl, setCombinedAnnotatedUrl] = useState(null);
+  const [combinedAudio, setCombinedAudio] = useState(null);
+  const [combinedFacialEmotion, setCombinedFacialEmotion] = useState(null);
+  const [combinedSpeechEmotion, setCombinedSpeechEmotion] = useState(null);
+  const [combinedComparison, setCombinedComparison] = useState(null);
+  const [combinedFacialProbs, setCombinedFacialProbs] = useState(null);
+  const [combinedSpeechProbs, setCombinedSpeechProbs] = useState(null);
+  const [isProcessingCombined, setIsProcessingCombined] = useState(false);
+  const combinedVideoRef = useRef(null);
+  const combinedCanvasRef = useRef(null);
+  
+  // Video Analysis
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoResult, setVideoResult] = useState(null);
+  const [isProcessingVideo, setIsProcessingVideo] = useState(false);
+
+  const API_URL = 'http://127.0.0.1:8000';
+
+  // ============== FACIAL FUNCTIONS ==============
+  
+  const handleFacialFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setFacialImage(file);
+      setFacialImageUrl(URL.createObjectURL(file));
+      setFacialEmotion(null);
+      setFacialAnnotatedUrl(null);
+      setFacialProbs(null);
+    }
+  };
+
+  const startFacialWebcam = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 224, height: 224 } });
+      facialVideoRef.current.srcObject = stream;
+      facialVideoRef.current.style.display = 'block';
+    } catch (error) {
+      alert('Cannot access webcam: ' + error.message);
+    }
+  };
+
+  const captureFacialImage = () => {
+    const video = facialVideoRef.current;
+    const canvas = facialCanvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    
+    canvas.toBlob((blob) => {
+      const file = new File([blob], 'facial_capture.jpg', { type: 'image/jpeg' });
+      setFacialImage(file);
+      setFacialImageUrl(canvas.toDataURL());
+      setFacialEmotion(null);
+      setFacialAnnotatedUrl(null);
+      setFacialProbs(null);
+      video.srcObject.getTracks().forEach(track => track.stop());
+      facialVideoRef.current.style.display = 'none';
+    });
+  };
+
+  const predictFacialEmotion = async () => {
+    if (!facialImage) {
+      alert('Please select or capture an image');
+      return;
+    }
+
+    setIsProcessingFacial(true);
+    const formData = new FormData();
+    formData.append('file', facialImage);
+
+    try {
+      const response = await axios.post(`${API_URL}/api/predict/facial`, formData);
+      const emotion = response.data.emotion || response.data.prediction || 'Unknown';
+      const confidence = response.data.confidence || response.data.max_probability || 0;
+      
+      setFacialEmotion(emotion);
+      setFacialConfidence(confidence);
+      
+      if (response.data.annotated_image) {
+        setFacialAnnotatedUrl('data:image/jpeg;base64,' + response.data.annotated_image);
+      }
+      
+      if (response.data.probabilities) {
+        setFacialProbs(response.data.probabilities);
+      } else if (response.data.all_scores) {
+        setFacialProbs(response.data.all_scores);
+      }
+    } catch (error) {
+      alert('Error: ' + error.message);
+    } finally {
+      setIsProcessingFacial(false);
+    }
+  };
+
+  // ============== SPEECH FUNCTIONS ==============
+  
+  const handleSpeechFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setSpeechAudio(file);
+      speechAudioRef.current.src = URL.createObjectURL(file);
+      setSpeechEmotion(null);
+      setSpeechProbs(null);
+    }
+  };
+
+  const startSpeechRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      speechStreamRef.current = stream;
+      const mediaRecorder = new MediaRecorder(stream);
+      speechMediaRecorderRef.current = mediaRecorder;
+      speechChunksRef.current = [];
+      setIsRecordingSpeech(true);
+
+      mediaRecorder.ondataavailable = (event) => {
+        speechChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(speechChunksRef.current, { type: 'audio/wav' });
+        const audioFile = new File([audioBlob], 'speech_recording.wav', { type: 'audio/wav' });
+        setSpeechAudio(audioFile);
+        speechAudioRef.current.src = URL.createObjectURL(audioBlob);
+        stream.getTracks().forEach(track => track.stop());
+        setIsRecordingSpeech(false);
+        setSpeechEmotion(null);
+        setSpeechProbs(null);
+      };
+
+      mediaRecorder.start();
+    } catch (error) {
+      alert('Cannot access microphone: ' + error.message);
+    }
+  };
+
+  const stopSpeechRecording = () => {
+    if (speechMediaRecorderRef.current && isRecordingSpeech) {
+      speechMediaRecorderRef.current.stop();
+    }
+  };
+
+  const predictSpeechEmotion = async () => {
+    if (!speechAudio) {
+      alert('Please record or upload audio');
+      return;
+    }
+
+    setIsProcessingSpeech(true);
+    const formData = new FormData();
+    formData.append('file', speechAudio);
+
+    try {
+      const response = await axios.post(`${API_URL}/api/predict/speech`, formData);
+      const emotion = response.data.emotion || response.data.prediction || 'Unknown';
+      const confidence = response.data.confidence || response.data.max_probability || 0;
+      
+      setSpeechEmotion(emotion);
+      setSpeechConfidence(confidence);
+      
+      if (response.data.probabilities) {
+        setSpeechProbs(response.data.probabilities);
+      } else if (response.data.all_scores) {
+        setSpeechProbs(response.data.all_scores);
+      }
+    } catch (error) {
+      alert('Error: ' + error.message);
+    } finally {
+      setIsProcessingSpeech(false);
+    }
+  };
+
+  // ============== COMBINED FUNCTIONS ==============
+  
+  const handleCombinedImageSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setCombinedImage(file);
+      setCombinedImageUrl(URL.createObjectURL(file));
+      setCombinedFacialEmotion(null);
+      setCombinedAnnotatedUrl(null);
+      setCombinedComparison(null);
+      setCombinedFacialProbs(null);
+    }
+  };
+
+  const startCombinedWebcam = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 224, height: 224 } });
+      combinedVideoRef.current.srcObject = stream;
+      combinedVideoRef.current.style.display = 'block';
+    } catch (error) {
+      alert('Cannot access webcam: ' + error.message);
+    }
+  };
+
+  const captureCombinedImage = () => {
+    const video = combinedVideoRef.current;
+    const canvas = combinedCanvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    
+    canvas.toBlob((blob) => {
+      const file = new File([blob], 'combined_capture.jpg', { type: 'image/jpeg' });
+      setCombinedImage(file);
+      setCombinedImageUrl(canvas.toDataURL());
+      setCombinedFacialEmotion(null);
+      setCombinedAnnotatedUrl(null);
+      setCombinedComparison(null);
+      setCombinedFacialProbs(null);
+      video.srcObject.getTracks().forEach(track => track.stop());
+      combinedVideoRef.current.style.display = 'none';
+    });
+  };
+
+  const handleCombinedAudioSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setCombinedAudio(file);
+      setCombinedSpeechEmotion(null);
+      setCombinedSpeechProbs(null);
+    }
+  };
+
+  const startCombinedAudioRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      const chunks = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        chunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/wav' });
+        const audioFile = new File([audioBlob], 'combined_recording.wav', { type: 'audio/wav' });
+        setCombinedAudio(audioFile);
+        stream.getTracks().forEach(track => track.stop());
+        setCombinedSpeechEmotion(null);
+        setCombinedSpeechProbs(null);
+      };
+
+      mediaRecorder.start();
+      setTimeout(() => mediaRecorder.stop(), 5000);
+    } catch (error) {
+      alert('Cannot access microphone: ' + error.message);
+    }
+  };
+
+  const predictCombinedEmotion = async () => {
+    if (!combinedImage || !combinedAudio) {
+      alert('Please provide both image and audio');
+      return;
+    }
+
+    setIsProcessingCombined(true);
+    const formData = new FormData();
+    formData.append('image', combinedImage);
+    formData.append('audio', combinedAudio);
+
+    try {
+      const response = await axios.post(`${API_URL}/api/predict/combined`, formData);
+      
+      const facialEmotion = response.data.facial?.emotion || response.data.facial || 'Unknown';
+      const speechEmotion = response.data.speech?.emotion || response.data.speech || 'Unknown';
+      
+      setCombinedFacialEmotion(facialEmotion);
+      setCombinedSpeechEmotion(speechEmotion);
+      
+      if (response.data.comparison) {
+        setCombinedComparison(response.data.comparison);
+      } else {
+        setCombinedComparison(facialEmotion === speechEmotion ? 
+          `✅ MATCH! Both indicate ${facialEmotion}` : 
+          `⚠️ MISMATCH - Face: ${facialEmotion} | Voice: ${speechEmotion}`);
+      }
+      
+      if (response.data.annotated_image) {
+        setCombinedAnnotatedUrl('data:image/jpeg;base64,' + response.data.annotated_image);
+      }
+      
+      if (response.data.facial?.probabilities) {
+        setCombinedFacialProbs(response.data.facial.probabilities);
+      }
+      
+      if (response.data.speech?.probabilities) {
+        setCombinedSpeechProbs(response.data.speech.probabilities);
+      }
+    } catch (error) {
+      alert('Error: ' + error.message);
+    } finally {
+      setIsProcessingCombined(false);
+    }
+  };
+
+  // ============== VIDEO ANALYSIS FUNCTIONS ==============
+  
+  const handleVideoSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setVideoFile(file);
+      setVideoResult(null);
+    }
+  };
+
+  const predictVideoEmotion = async () => {
+    if (!videoFile) {
+      alert('Please select a video file');
+      return;
+    }
+
+    setIsProcessingVideo(true);
+    const formData = new FormData();
+    formData.append('file', videoFile);
+
+    try {
+      const response = await axios.post(`${API_URL}/api/predict/video`, formData);
+      setVideoResult(response.data);
+    } catch (error) {
+      alert('Error: ' + error.message);
+    } finally {
+      setIsProcessingVideo(false);
+    }
+  };
+
+  // Helper to render confidence scores
+  const renderConfidenceScores = (probs) => {
+    if (!probs) return null;
+    
+    const entries = typeof probs === 'object' ? Object.entries(probs) : [];
+    return (
+      <div className="emotion-scores">
+        {entries.map(([emotion, score]) => (
+          <div key={emotion} className="score-bar">
+            <span>{emotion.replace(/^[😠🤢😨😊😐😢😲😌]*\s*/, '')}</span>
+            <div className="bar">
+              <div 
+                className="bar-fill" 
+                style={{ width: `${(score * 100).toFixed(1)}%` }}
+              />
+            </div>
+            <span>{(score * 100).toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="app-container">
       {/* Header */}
       <header className="gradio-header">
-        <h1>🎭 Multimodal Emotion Recognition</h1>
-        <p><strong>Analyze emotions from facial expressions and voice tone simultaneously!</strong></p>
-        <hr style={{ marginTop: '15px', marginBottom: '15px' }} />
+        <h1>🎭 Unified Facial + Voice Emotion Recognition</h1>
+        <p><strong>Test both facial expressions and voice tone simultaneously!</strong></p>
+        <p>This demo combines two state-of-the-art emotion recognition models:</p>
+        <ul style={{ textAlign: 'left', display: 'inline-block' }}>
+          <li>📸 <strong>Vision Transformer (ViT)</strong> for facial emotion (71.29% accuracy)</li>
+          <li>🎤 <strong>HuBERT</strong> for speech emotion (87.50% accuracy)</li>
+        </ul>
+        <hr />
       </header>
 
       {/* Tabs */}
@@ -1011,50 +1127,36 @@ function App() {
         <button 
           className={`tab-btn ${activeTab === 0 ? 'active' : ''}`}
           onClick={() => setActiveTab(0)}
-          title="Analyze facial emotions from images or webcam"
         >
-          📸 Facial
+          📸 Facial Emotion
         </button>
         <button 
           className={`tab-btn ${activeTab === 1 ? 'active' : ''}`}
           onClick={() => setActiveTab(1)}
-          title="Analyze speech emotions from audio or microphone"
         >
-          🎤 Speech
+          🎤 Speech Emotion
         </button>
         <button 
           className={`tab-btn ${activeTab === 2 ? 'active' : ''}`}
           onClick={() => setActiveTab(2)}
-          title="Compare facial and speech emotions simultaneously"
         >
-          🔗 Combined
+          🔗 Combined Analysis
         </button>
         <button 
           className={`tab-btn ${activeTab === 3 ? 'active' : ''}`}
           onClick={() => setActiveTab(3)}
-          title="View model information and technical details"
         >
-          ℹ️ Model Info
-        </button>
-        <button 
-          className={`tab-btn ${activeTab === 4 ? 'active' : ''}`}
-          onClick={() => setActiveTab(4)}
-          title="View and manage analysis sessions"
-        >
-          💾 Sessions
+          ℹ️ Model Information
         </button>
       </div>
 
-      {/* Tab Content */}
+      {/* Tab Rendering */}
       {activeTab === 0 && <FacialTab />}
       {activeTab === 1 && <SpeechTab />}
       {activeTab === 2 && <CombinedTab />}
       {activeTab === 3 && <ModelInfoTab />}
-      {activeTab === 4 && <SessionsTab />}
-
-      {/* Footer */}
       <footer className="footer">
-        <p>© 2026 Multimodal Emotion Recognition System | ViT (71.29%) + HuBERT (87.50%)</p>
+        <p>© 2026 Multi-Modal Emotion Recognition System</p>
       </footer>
     </div>
   );

@@ -1,10 +1,7 @@
 # 📊 Multimodal Emotion Recognition - Project Status
 
-**Date**: February 4, 2026  
-**Current Status**: 87% Complete - Full backend API (18 endpoints), Grad-CAM & saliency maps, SQLite sessions, React + Gradio frontend
-**PPRS Compliance**: ~85-87% (18-19 of 20+ major requirements met)
-**Project Size**: 6.4GB (models: 1.5GB, code: 5GB with venv)
-**Code Stats**: Backend (642 lines), Frontend React (1859 lines), Gradio (882 lines), Services (1149 lines)
+**Date**: January 28, 2026  
+**Current Status**: 65% Complete - Core models trained, Gradio demo fully functional with video analysis, FFmpeg integrated
 
 ---
 
@@ -91,44 +88,6 @@
   - Dynamic visibility toggling between modes
   - Proper input handling for both workflows
 
-### Phase 6: Explainability & Session Storage (Feb 4, 2026)
-- ✅ **Grad-CAM Visualization (Facial)**
-  - File: `backend/services/explainability.py` (269 lines)
-  - Generates attention heatmaps showing facial regions influencing predictions
-  - Integrated with `/api/predict/facial` endpoint
-  - Base64-encoded PNG returned with predictions
-  
-- ✅ **Audio Saliency Maps (Speech)**
-  - File: `backend/services/audio_explainability.py` (256 lines)
-  - Computes frequency importance using input gradients
-  - Visualizes which frequency ranges influence emotion detection
-  - Integrated with `/api/predict/speech` endpoint
-  - Base64-encoded spectrogram returned with predictions
-  
-- ✅ **SQLite Session Storage**
-  - File: `backend/services/database.py` (444 lines)
-  - Database location: `data/sessions.db` (auto-created)
-  - Tables: sessions, predictions, concordance_records
-  - Features:
-    - Create/retrieve/list sessions
-    - Save individual predictions with explainability data
-    - Save concordance records (MATCH/MISMATCH)
-    - Export sessions as CSV/JSON
-    - Compute statistics per session
-    - Delete sessions and predictions
-  
-- ✅ **12 New Session Management Endpoints**
-  - `POST /api/sessions/create` - Create new session
-  - `GET /api/sessions` - List all sessions
-  - `GET /api/sessions/{session_id}` - Get session details
-  - `POST /api/sessions/{session_id}/save_prediction` - Save prediction
-  - `POST /api/sessions/{session_id}/save_concordance` - Save concordance
-  - `GET /api/sessions/{session_id}/export/csv` - Export as CSV
-  - `GET /api/sessions/{session_id}/export/json` - Export as JSON
-  - `DELETE /api/sessions/{session_id}` - Delete session
-  - `GET /api/sessions/{session_id}/statistics` - Get stats
-  - Plus base endpoints for emotions and model status
-
 ---
 
 ## 📁 CURRENT PROJECT STRUCTURE
@@ -180,19 +139,24 @@ multimodal-emotion-recognition/
 ## ⏳ PARTIALLY COMPLETE
 
 ### PPRS Requirement Compliance
-- **Overall**: ~85% complete ✅ (significantly improved)
-- **Functional Requirements**: 12/14 complete (86%)
-- **Non-Functional Requirements**: 18/20 complete (90%)
+- **Overall**: ~55% complete (improved with combined endpoint)
+- **Functional Requirements**: 6/14 complete (43%)
+- **Non-Functional Requirements**: 11/20 complete (55%)
 
 ### Known Issues
 1. **Facial accuracy below target**
    - Current: 71.29% | Target: 90% | Gap: **-18.71%** ⚠️ CRITICAL
-   - Impacts PPRS compliance score but not blocking
+   - Biggest blocker for PPRS compliance
 
-2. **Facial model retraining** (OPTIONAL)
-   - Could improve accuracy to meet 90% target
-   - Time-intensive: 3-5 days
-   - Alternative: Accept current 71% + prioritize other features
+2. **No explainability features**
+   - No Grad-CAM visualization for facial emotion
+   - No audio saliency maps for speech emotion
+   - PPRS requirement: Both mandatory
+
+4. **No session storage**
+   - No database for recording predictions
+   - No session history or export functionality
+   - PPRS requirement: Mandatory
 
 ---
 
@@ -202,26 +166,21 @@ multimodal-emotion-recognition/
 |-----------|--------|-------|
 | Facial Model | ✅ Trained | 71.29% acc (below 90% target) |
 | Speech Model | ✅ Trained | 87.50% acc (above 80% target) ✅ |
-| Backend API | ✅ 19/19 endpoints | All endpoints implemented ✅ |
+| Backend API | ✅ 7/7 endpoints | All endpoints implemented |
 | Frontend UI | ✅ Complete | 4 tabs, all functional ✅ |
-| Explainability | ✅ Implemented | Grad-CAM + audio saliency ✅ |
-| Session Storage | ✅ Implemented | SQLite database with 12 endpoints ✅ |
+| Explainability | ❌ Not started | 0% - Need Grad-CAM + saliency |
+| Session Storage | ❌ Not started | 0% - Need SQLite database |
 | Project Size | ✅ Optimized | 3.6GB (1.7GB freed) |
-| PPRS Compliance | ✅ 85% | Core features complete, accuracy gap remains |
 
 ---
 
 ## 📈 TIMELINE ESTIMATE TO 100% PPRS
 
-- **Feb 4**: ✅ Grad-CAM + audio saliency + session storage COMPLETE (85%)
-- **Feb 5-10**: Facial model accuracy improvement (optional, 5 days)
-- **Target**: 85-90% compliance with current code
+- **Week 1**: Combined endpoint + improve facial accuracy
+- **Week 2**: Grad-CAM + audio saliency implementation
+- **Week 3**: Session storage + export + final polish
+- **Target**: Mid-February for 85-90% compliance
 - **Deadline**: April 20 (13 weeks available)
-
-**Remaining for 100%**: 
-- Facial accuracy improvement to 90% (retraining)
-- Minor UI/UX polish
-- Final testing and documentation
 
 ---
 
