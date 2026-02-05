@@ -76,8 +76,8 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"\n📱 Device: {DEVICE}")
 
 PROJECT_ROOT = Path(__file__).parent
-FACIAL_MODEL_PATH = PROJECT_ROOT / 'models' / 'phase2' / 'vit_emotion_model.pt'
-SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'phase3' / 'hubert_emotion_model.pt'
+FACIAL_MODEL_PATH = PROJECT_ROOT / 'models' / 'vit_emotion_model.pt'
+SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'hubert_emotion_model.pt'
 
 # ==================== Model Loading ====================
 print("\n🔄 Loading Models...")
@@ -873,6 +873,6 @@ if __name__ == "__main__":
     demo.launch(
         server_name="127.0.0.1",
         server_port=7860,
-        share=True,  # Creates public link for 72 hours!
+        share=False,  # Local access only
         show_error=True
     )

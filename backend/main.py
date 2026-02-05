@@ -43,8 +43,8 @@ speech_processor = None
 
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent
-FACIAL_MODEL_PATH = PROJECT_ROOT / 'models' / 'phase2' / 'vit_emotion_model.pt'
-SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'phase3' / 'hubert_emotion_model.pt'
+FACIAL_MODEL_PATH = PROJECT_ROOT / 'models' / 'vit_emotion_model.pt'
+SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'hubert_emotion_model.pt'
 
 print(f"Device: {DEVICE}")
 print(f"Project root: {PROJECT_ROOT}")
