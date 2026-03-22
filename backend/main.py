@@ -12,28 +12,51 @@ from transformers import AutoImageProcessor, AutoModelForImageClassification, Au
 import tempfile
 import os
 import sys
+import logging
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] [%(levelname)s] %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Add services to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Import explainability module
 from services.explainability import generate_grad_cam, generate_audio_saliency, create_combined_visualization
+from config import ENV, FRONTEND_URL, USE_GPU
 
 app = FastAPI(title="Multi-Modal Emotion Recognition API", version="2.0.0")
 
-# Enable CORS
+# Configure CORS based on environment
+if ENV == "production":
+    allowed_origins = [
+        FRONTEND_URL,
+        "https://yourfrontend.vercel.app",  # Update with your Vercel URL
+    ]
+else:
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+logger.info(f"CORS enabled for: {allowed_origins}")
+
 # Configuration
 EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+DEVICE = torch.device('cuda' if (torch.cuda.is_available() and USE_GPU) else 'cpu')
 
 # Model storage
 vit_model = None
@@ -46,8 +69,9 @@ PROJECT_ROOT = Path(__file__).parent.parent
 FACIAL_MODEL_PATH = PROJECT_ROOT / 'models' / 'vit_emotion_model.pt'
 SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'hubert_emotion_model.pt'
 
-print(f"Device: {DEVICE}")
-print(f"Project root: {PROJECT_ROOT}")
+logger.info(f"Device: {DEVICE}")
+logger.info(f"Project root: {PROJECT_ROOT}")
+logger.info(f"Environment: {ENV}")
 
 # ========== MODEL LOADING ==========
 
@@ -55,7 +79,7 @@ def load_facial_model():
     """Load ViT model for facial emotion"""
     global vit_model, facial_processor
     try:
-        print("Loading Facial Emotion Model (ViT)...")
+        logger.info("Loading Facial Emotion Model (ViT)...")
         facial_processor = AutoImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
         vit_model = AutoModelForImageClassification.from_pretrained(
             'google/vit-base-patch16-224-in21k',
@@ -69,21 +93,21 @@ def load_facial_model():
                 vit_model.load_state_dict(checkpoint['model_state_dict'])
             else:
                 vit_model.load_state_dict(checkpoint)
-            print(f"✓ Loaded ViT checkpoint")
+            logger.info(f"✓ Loaded ViT checkpoint")
         
         vit_model = vit_model.to(DEVICE)
         vit_model.eval()
-        print("✓ Facial model ready")
+        logger.info("✓ Facial model ready")
         return True
     except Exception as e:
-        print(f"❌ Error loading facial model: {e}")
+        logger.error(f"❌ Error loading facial model: {e}")
         return False
 
 def load_speech_model():
     """Load HuBERT model for speech emotion"""
     global speech_model, speech_processor
     try:
-        print("Loading Speech Emotion Model (HuBERT)...")
+        logger.info("Loading Speech Emotion Model (HuBERT)...")
         speech_processor = AutoFeatureExtractor.from_pretrained('facebook/hubert-large-ls960-ft')
         speech_model = AutoModelForAudioClassification.from_pretrained(
             'facebook/hubert-large-ls960-ft',
@@ -97,14 +121,14 @@ def load_speech_model():
                 speech_model.load_state_dict(checkpoint['model_state_dict'])
             else:
                 speech_model.load_state_dict(checkpoint)
-            print(f"✓ Loaded HuBERT checkpoint")
+            logger.info(f"✓ Loaded HuBERT checkpoint")
         
         speech_model = speech_model.to(DEVICE)
         speech_model.eval()
-        print("✓ Speech model ready")
+        logger.info("✓ Speech model ready")
         return True
     except Exception as e:
-        print(f"❌ Error loading speech model: {e}")
+        logger.error(f"❌ Error loading speech model: {e}")
         return False
 
 # Load on startup
@@ -180,11 +204,11 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
                 result["original_image"] = original_base64
                 result["grad_cam"] = heatmap_base64
             except Exception as e:
-                print(f"Warning: Could not generate Grad-CAM: {e}")
+                logger.warning(f"Could not generate Grad-CAM: {e}")
         
         return result
     except Exception as e:
-        print(f"Error predicting facial emotion: {e}")
+        logger.error(f"Error predicting facial emotion: {e}")
         return None
 
 def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explainability: bool = False):
@@ -224,11 +248,11 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
                 result["spectrogram"] = spec_base64
                 result["saliency"] = saliency_base64
             except Exception as e:
-                print(f"Warning: Could not generate audio saliency: {e}")
+                logger.warning(f"Could not generate audio saliency: {e}")
         
         return result
     except Exception as e:
-        print(f"Error predicting speech emotion: {e}")
+        logger.error(f"Error predicting speech emotion: {e}")
         return None
 
 # ========== API ENDPOINTS ==========
@@ -250,18 +274,16 @@ async def health():
 async def predict_facial(file: UploadFile = File(...), explain: bool = False):
     """Predict emotion from image"""
     try:
-        print(f"Received file: {file.filename}, content_type: {file.content_type}")
+        logger.info(f"Received file: {file.filename}, content_type: {file.content_type}")
         contents = await file.read()
-        print(f"File size: {len(contents)} bytes")
+        logger.info(f"File size: {len(contents)} bytes")
         if len(contents) == 0:
             return JSONResponse(status_code=400, content={"error": "Empty file received"})
         image = Image.open(BytesIO(contents)).convert('RGB')
         result = predict_facial_emotion(image, generate_explainability=explain)
         return {"success": True, **result} if result else {"success": False, "error": "Prediction failed"}
     except Exception as e:
-        print(f"Error in predict_facial: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error in predict_facial: {e}", exc_info=True)
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 @app.post("/api/predict/speech")
