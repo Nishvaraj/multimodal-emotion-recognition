@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import cv2
 import librosa
+import base64
 from PIL import Image
 from io import BytesIO
 from pathlib import Path
@@ -76,6 +77,53 @@ SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'hubert_emotion_model.pt'
 def _upload_suffix(filename: str, default_suffix: str) -> str:
     suffix = Path(filename or '').suffix.lower()
     return suffix if suffix else default_suffix
+
+
+FACE_CASCADE = cv2.CascadeClassifier(
+    cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+)
+
+
+def _encode_image_base64(image_array: np.ndarray) -> str:
+    image_pil = Image.fromarray(image_array.astype(np.uint8))
+    buf = BytesIO()
+    image_pil.save(buf, format='PNG')
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def _decode_image_base64(image_b64: str) -> np.ndarray:
+    raw = base64.b64decode(image_b64)
+    return np.array(Image.open(BytesIO(raw)).convert('RGB'))
+
+
+def _detect_primary_face(image: Image.Image):
+    img_array = np.array(image)
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+    faces = FACE_CASCADE.detectMultiScale(
+        gray,
+        scaleFactor=1.1,
+        minNeighbors=5,
+        minSize=(40, 40)
+    )
+
+    if faces is None or len(faces) == 0:
+        return None
+
+    return max(faces, key=lambda b: b[2] * b[3])
+
+
+def _crop_face_with_margin(image_array: np.ndarray, face_box, margin_ratio: float = 0.2):
+    x, y, w, h = [int(v) for v in face_box]
+    h_img, w_img = image_array.shape[:2]
+    mx = int(w * margin_ratio)
+    my = int(h * margin_ratio)
+
+    x1 = max(0, x - mx)
+    y1 = max(0, y - my)
+    x2 = min(w_img, x + w + mx)
+    y2 = min(h_img, y + h + my)
+
+    return image_array[y1:y2, x1:x2], (x1, y1, x2 - x1, y2 - y1)
 
 logger.info(f"Device: {DEVICE}")
 logger.info(f"Project root: {PROJECT_ROOT}")
@@ -185,7 +233,34 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
         if vit_model is None:
             return None
         
-        inputs = facial_processor(image, return_tensors='pt').to(DEVICE)
+        input_array = np.array(image)
+        face_box = _detect_primary_face(image)
+
+        model_image = image
+        expanded_box = None
+
+        if face_box is not None:
+            face_crop, expanded_box = _crop_face_with_margin(input_array, face_box)
+            if face_crop.size > 0:
+                model_image = Image.fromarray(face_crop)
+
+        # Always return an annotated face-detection image.
+        annotated = input_array.copy()
+        if face_box is not None:
+            x, y, w, h = [int(v) for v in face_box]
+            cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 255, 255), 2)
+            cv2.putText(
+                annotated,
+                'Face detected',
+                (x, max(20, y - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 255),
+                2,
+                cv2.LINE_AA
+            )
+
+        inputs = facial_processor(model_image, return_tensors='pt').to(DEVICE)
         with torch.no_grad():
             outputs = vit_model(**inputs)
             logits = outputs.logits.cpu().numpy()[0]
@@ -195,24 +270,65 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
         result = {
             "emotion": EMOTIONS_FACIAL[top_idx],
             "confidence": float(probs[top_idx]),
-            "probabilities": {e: float(p) for e, p in zip(EMOTIONS_FACIAL, probs)}
+            "probabilities": {e: float(p) for e, p in zip(EMOTIONS_FACIAL, probs)},
+            "face_detected": face_box is not None,
+            "annotated_image": _encode_image_base64(annotated)
         }
+
+        if face_box is not None:
+            x, y, w, h = [int(v) for v in face_box]
+            result["face_box"] = {"x": x, "y": y, "width": w, "height": h}
         
         # Generate Grad-CAM if requested
         if generate_explainability:
+            result["explainability_status"] = {
+                "requested": True,
+                "generated": False,
+                "error": None
+            }
             try:
                 original_base64, heatmap_base64 = generate_grad_cam(
-                    image,
+                    model_image,
                     vit_model,
                     facial_processor,
                     top_idx,
                     EMOTIONS_FACIAL,
                     DEVICE
                 )
-                result["original_image"] = original_base64
-                result["grad_cam"] = heatmap_base64
+                if original_base64:
+                    result["original_image"] = original_base64
+                if heatmap_base64:
+                    # If a face was detected, project the face-level Grad-CAM back onto the full image.
+                    if expanded_box is not None:
+                        try:
+                            hx, hy, hw, hh = [int(v) for v in expanded_box]
+                            heatmap_img = _decode_image_base64(heatmap_base64)
+                            heatmap_img = cv2.resize(heatmap_img, (hw, hh), interpolation=cv2.INTER_LINEAR)
+                            projected = annotated.copy()
+                            projected[hy:hy + hh, hx:hx + hw] = heatmap_img
+                            x, y, w, h = [int(v) for v in face_box]
+                            cv2.rectangle(projected, (x, y), (x + w, y + h), (0, 255, 255), 2)
+                            cv2.putText(
+                                projected,
+                                'Decision region',
+                                (x, min(projected.shape[0] - 10, y + h + 22)),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.6,
+                                (255, 255, 0),
+                                2,
+                                cv2.LINE_AA
+                            )
+                            result["grad_cam"] = _encode_image_base64(projected)
+                        except Exception:
+                            result["grad_cam"] = heatmap_base64
+                    else:
+                        result["grad_cam"] = heatmap_base64
+                    result["explainability_status"]["generated"] = True
+                else:
+                    result["explainability_status"]["error"] = "Grad-CAM map returned empty output"
             except Exception as e:
                 logger.warning(f"Could not generate Grad-CAM: {e}")
+                result["explainability_status"]["error"] = str(e)
         
         return result
     except Exception as e:
@@ -243,6 +359,11 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
         
         # Generate audio saliency if requested
         if generate_explainability:
+            result["explainability_status"] = {
+                "requested": True,
+                "generated": False,
+                "error": None
+            }
             try:
                 spec_base64, saliency_base64 = generate_audio_saliency(
                     audio,
@@ -253,10 +374,16 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
                     DEVICE,
                     sr=16000
                 )
-                result["spectrogram"] = spec_base64
-                result["saliency"] = saliency_base64
+                if spec_base64:
+                    result["waveform"] = spec_base64
+                if saliency_base64:
+                    result["saliency"] = saliency_base64
+                    result["explainability_status"]["generated"] = True
+                else:
+                    result["explainability_status"]["error"] = "Audio saliency map returned empty output"
             except Exception as e:
                 logger.warning(f"Could not generate audio saliency: {e}")
+                result["explainability_status"]["error"] = str(e)
         
         return result
     except Exception as e:
@@ -374,7 +501,10 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
             "facial_emotion": {
                 "emotion": facial_emotion or "unknown",
                 "confidence": float(facial_confidence),
-                "probabilities": facial_result["probabilities"] if facial_result else {}
+                "probabilities": facial_result["probabilities"] if facial_result else {},
+                "face_detected": facial_result.get("face_detected", False) if facial_result else False,
+                "face_box": facial_result.get("face_box") if facial_result else None,
+                "annotated_image": facial_result.get("annotated_image") if facial_result else None
             },
             "speech_emotion": {
                 "emotion": speech_emotion or "unknown",
@@ -390,13 +520,43 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
             }
         }
         
-        # Add explainability if requested (allow partial outputs)
-        if explain and facial_result and speech_result:
+        # Add explainability if requested (allow partial outputs + status details)
+        if explain:
             explainability = {}
-            if facial_result.get("grad_cam"):
+            errors = []
+
+            facial_status = (facial_result or {}).get("explainability_status") or {
+                "requested": True,
+                "generated": False,
+                "error": "Facial explainability unavailable"
+            }
+            speech_status = (speech_result or {}).get("explainability_status") or {
+                "requested": True,
+                "generated": False,
+                "error": "Speech explainability unavailable"
+            }
+
+            if facial_result and facial_result.get("grad_cam"):
                 explainability["grad_cam"] = facial_result.get("grad_cam")
-            if speech_result.get("saliency"):
+            elif facial_status.get("error"):
+                errors.append(f"Facial: {facial_status.get('error')}")
+
+            if speech_result and speech_result.get("saliency"):
                 explainability["saliency"] = speech_result.get("saliency")
+            elif speech_status.get("error"):
+                errors.append(f"Speech: {speech_status.get('error')}")
+
+            if speech_result and speech_result.get("waveform"):
+                explainability["waveform"] = speech_result.get("waveform")
+
+            response["explainability_status"] = {
+                "requested": True,
+                "generated": bool(explainability),
+                "facial": facial_status,
+                "speech": speech_status,
+                "errors": errors
+            }
+
             if explainability:
                 response["explainability"] = explainability
         
@@ -461,36 +621,71 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
                 "fps": float(fps)
             }
 
-            if explain and frames and facial_emotion != "unknown" and speech_result:
-                try:
-                    # Use a representative frame (middle) and full audio for explainability.
-                    rep_frame = frames[len(frames) // 2]
-                    facial_idx = EMOTIONS_FACIAL.index(facial_emotion) if facial_emotion in EMOTIONS_FACIAL else 0
-                    speech_idx = EMOTIONS_SPEECH.index(speech_result["emotion"]) if speech_result and speech_result["emotion"] in EMOTIONS_SPEECH else 0
+            if explain:
+                explainability = {}
+                errors = []
 
-                    _, grad_cam_base64 = generate_grad_cam(
-                        rep_frame,
-                        vit_model,
-                        facial_processor,
-                        facial_idx,
-                        EMOTIONS_FACIAL,
-                        DEVICE
-                    )
-                    _, saliency_base64 = generate_audio_saliency(
-                        audio,
-                        speech_model,
-                        speech_processor,
-                        speech_idx,
-                        EMOTIONS_SPEECH,
-                        DEVICE,
-                        sr=16000
-                    )
-                    response["explainability"] = {
-                        "grad_cam": grad_cam_base64,
-                        "saliency": saliency_base64
-                    }
-                except Exception as e:
-                    logger.warning(f"Could not generate video explainability: {e}")
+                facial_exp_status = {
+                    "requested": True,
+                    "generated": False,
+                    "error": None
+                }
+                speech_exp_status = {
+                    "requested": True,
+                    "generated": False,
+                    "error": None
+                }
+
+                if frames and facial_emotion != "unknown":
+                    try:
+                        rep_frame = frames[len(frames) // 2]
+                        facial_exp_result = predict_facial_emotion(rep_frame, generate_explainability=True)
+                        if facial_exp_result and facial_exp_result.get("grad_cam"):
+                            explainability["grad_cam"] = facial_exp_result.get("grad_cam")
+                            facial_exp_status["generated"] = True
+                        else:
+                            facial_exp_status["error"] = (
+                                (facial_exp_result or {}).get("explainability_status", {}).get("error")
+                                or "Grad-CAM map unavailable for selected video frame"
+                            )
+                    except Exception as e:
+                        facial_exp_status["error"] = str(e)
+                else:
+                    facial_exp_status["error"] = "No valid face frame found for explainability"
+
+                if speech_result is not None:
+                    try:
+                        speech_exp_result = predict_speech_emotion(audio, sr, generate_explainability=True)
+                        if speech_exp_result and speech_exp_result.get("saliency"):
+                            explainability["saliency"] = speech_exp_result.get("saliency")
+                            speech_exp_status["generated"] = True
+                            if speech_exp_result.get("waveform"):
+                                explainability["waveform"] = speech_exp_result.get("waveform")
+                        else:
+                            speech_exp_status["error"] = (
+                                (speech_exp_result or {}).get("explainability_status", {}).get("error")
+                                or "Audio saliency map unavailable for this video audio"
+                            )
+                    except Exception as e:
+                        speech_exp_status["error"] = str(e)
+                else:
+                    speech_exp_status["error"] = "No valid audio prediction found for explainability"
+
+                if facial_exp_status.get("error"):
+                    errors.append(f"Facial: {facial_exp_status.get('error')}")
+                if speech_exp_status.get("error"):
+                    errors.append(f"Speech: {speech_exp_status.get('error')}")
+
+                response["explainability_status"] = {
+                    "requested": True,
+                    "generated": bool(explainability),
+                    "facial": facial_exp_status,
+                    "speech": speech_exp_status,
+                    "errors": errors
+                }
+
+                if explainability:
+                    response["explainability"] = explainability
 
             return response
         finally:

@@ -36,6 +36,8 @@ function FacialTab({ onResult }) {
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [showGradCAM, setShowGradCAM] = useState(false);
   const [gradCam, setGradCam] = useState(null);
+  const [annotatedImage, setAnnotatedImage] = useState(null);
+  const [faceDetected, setFaceDetected] = useState(false);
 
   useEffect(() => {
     if (isCameraOn && videoRef.current && cameraStreamRef.current) {
@@ -52,6 +54,8 @@ function FacialTab({ onResult }) {
         setImagePreview(evt.target.result);
         setEmotion(null);
         setGradCam(null);
+        setAnnotatedImage(null);
+        setFaceDetected(false);
       };
       reader.readAsDataURL(file);
     }
@@ -111,6 +115,8 @@ function FacialTab({ onResult }) {
         setEmotion(response.data.emotion);
         setConfidence(response.data.confidence);
         setProbabilities(response.data.probabilities);
+        setAnnotatedImage(response.data.annotated_image || null);
+        setFaceDetected(Boolean(response.data.face_detected));
         if (response.data.grad_cam) {
           setGradCam(response.data.grad_cam);
         }
@@ -292,13 +298,18 @@ function FacialTab({ onResult }) {
         )}
 
         {/* Annotated Result */}
-        {emotion && imagePreview && (
+        {emotion && (annotatedImage || imagePreview) && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-              <span className="text-purple-300 text-sm font-medium">Annotated Result</span>
+              <span className="text-purple-300 text-sm font-medium">Face Detection</span>
             </div>
             <div className="p-4">
-              <img src={imagePreview} alt="Annotated" className="w-full rounded-lg" />
+              <p className="text-slate-400 text-sm mb-3">
+                {faceDetected
+                  ? 'Yellow box marks detected face before emotion reasoning.'
+                  : 'No face box was detected; model used the full image.'}
+              </p>
+              <img src={annotatedImage ? `data:image/png;base64,${annotatedImage}` : imagePreview} alt="Annotated" className="w-full rounded-lg" />
             </div>
           </div>
         )}
@@ -340,6 +351,7 @@ function SpeechTab({ onResult }) {
   const streamRef = useRef(null);
   const [showSaliency, setShowSaliency] = useState(false);
   const [saliency, setSaliency] = useState(null);
+  const [waveform, setWaveform] = useState(null);
 
   const startRecording = async () => {
     try {
@@ -376,6 +388,7 @@ function SpeechTab({ onResult }) {
       setAudioFile(file);
       setEmotion(null);
       setSaliency(null);
+      setWaveform(null);
     }
   };
 
@@ -387,6 +400,7 @@ function SpeechTab({ onResult }) {
     setLoading(true);
     setError(null);
     setSaliency(null);
+    setWaveform(null);
     try {
       const formData = new FormData();
       formData.append('file', audioFile);
@@ -397,6 +411,9 @@ function SpeechTab({ onResult }) {
         setEmotion(response.data.emotion);
         setConfidence(response.data.confidence);
         setProbabilities(response.data.probabilities);
+        if (response.data.waveform) {
+          setWaveform(response.data.waveform);
+        }
         if (response.data.saliency) {
           setSaliency(response.data.saliency);
         }
@@ -584,6 +601,25 @@ function SpeechTab({ onResult }) {
           </div>
         )}
 
+        {/* Audio Waveform */}
+        {waveform && (
+          <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
+              <span className="text-purple-300 text-sm font-medium">Audio Waveform</span>
+            </div>
+            <div className="p-4">
+              <p className="text-slate-400 text-sm mb-3">
+                Line plot of the uploaded audio signal over time.
+              </p>
+              <img
+                src={`data:image/png;base64,${waveform}`}
+                alt="Audio Waveform"
+                className="w-full rounded-lg"
+              />
+            </div>
+          </div>
+        )}
+
         {/* Audio Saliency Map */}
         {saliency && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
@@ -644,6 +680,10 @@ function CombinedTab({ onResult }) {
   const [showExplainability, setShowExplainability] = useState(false);
   const [gradCam, setGradCam] = useState(null);
   const [saliency, setSaliency] = useState(null);
+  const [waveform, setWaveform] = useState(null);
+  const [annotatedFace, setAnnotatedFace] = useState(null);
+  const [faceDetected, setFaceDetected] = useState(false);
+  const [explainabilityStatus, setExplainabilityStatus] = useState(null);
 
   useEffect(() => {
     return () => {
@@ -683,6 +723,10 @@ function CombinedTab({ onResult }) {
     setVideoResult(null);
     setGradCam(null);
     setSaliency(null);
+    setWaveform(null);
+    setAnnotatedFace(null);
+    setFaceDetected(false);
+    setExplainabilityStatus(null);
   };
 
   const switchMode = (mode) => {
@@ -855,6 +899,10 @@ function CombinedTab({ onResult }) {
     setError(null);
     setGradCam(null);
     setSaliency(null);
+    setWaveform(null);
+    setAnnotatedFace(null);
+    setFaceDetected(false);
+    setExplainabilityStatus(null);
     try {
       const formData = new FormData();
       formData.append('image_file', imageFile);
@@ -868,6 +916,8 @@ function CombinedTab({ onResult }) {
         setConcordance(response.data.concordance);
         setFacialProbs(response.data.facial_emotion.probabilities);
         setSpeechProbs(response.data.speech_emotion.probabilities);
+        setAnnotatedFace(response.data.facial_emotion.annotated_image || null);
+        setFaceDetected(Boolean(response.data.facial_emotion.face_detected));
         
         if (response.data.explainability) {
           if (response.data.explainability.grad_cam) {
@@ -876,6 +926,12 @@ function CombinedTab({ onResult }) {
           if (response.data.explainability.saliency) {
             setSaliency(response.data.explainability.saliency);
           }
+          if (response.data.explainability.waveform) {
+            setWaveform(response.data.explainability.waveform);
+          }
+        }
+        if (response.data.explainability_status) {
+          setExplainabilityStatus(response.data.explainability_status);
         }
         if (onResult) {
           onResult({
@@ -914,7 +970,11 @@ function CombinedTab({ onResult }) {
     setError(null);
     setGradCam(null);
     setSaliency(null);
+    setWaveform(null);
+    setAnnotatedFace(null);
+    setFaceDetected(false);
     setVideoResult(null);
+    setExplainabilityStatus(null);
     try {
       const formData = new FormData();
       formData.append('file', videoFile, videoFile.name || `video-${Date.now()}.webm`);
@@ -939,6 +999,12 @@ function CombinedTab({ onResult }) {
           if (response.data.explainability.saliency) {
             setSaliency(response.data.explainability.saliency);
           }
+          if (response.data.explainability.waveform) {
+            setWaveform(response.data.explainability.waveform);
+          }
+        }
+        if (response.data.explainability_status) {
+          setExplainabilityStatus(response.data.explainability_status);
         }
 
         if (onResult) {
@@ -1236,7 +1302,9 @@ function CombinedTab({ onResult }) {
             {showExplainability
               ? (gradCam || saliency)
                 ? 'Explainability generated successfully.'
-                : 'Explainability was requested but no maps were returned for this input.'
+                : explainabilityStatus?.errors?.length
+                  ? `Explainability requested, but map generation failed: ${explainabilityStatus.errors.join(' | ')}`
+                  : 'Explainability was requested but no maps were returned for this input.'
               : 'Explainability is off. Enable the toggle to request Grad-CAM and saliency outputs.'}
           </div>
 
@@ -1315,20 +1383,25 @@ function CombinedTab({ onResult }) {
           </div>
 
           {/* Annotated Face */}
-          {inputMode === 'separate' && imagePreview && (
+          {inputMode === 'separate' && (annotatedFace || imagePreview) && (
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
               <div className="bg-purple-900 px-4 py-2">
-                <span className="text-purple-300 text-sm font-medium">Annotated Face</span>
+                <span className="text-purple-300 text-sm font-medium">Face Detection</span>
               </div>
               <div className="p-4">
-                <img src={imagePreview} alt="Annotated" className="w-full rounded-lg" />
+                <p className="text-slate-400 text-sm mb-3">
+                  {faceDetected
+                    ? 'Detected face is boxed before explainability is computed.'
+                    : 'Face box not found; full image was analyzed.'}
+                </p>
+                <img src={annotatedFace ? `data:image/png;base64,${annotatedFace}` : imagePreview} alt="Annotated" className="w-full rounded-lg" />
               </div>
             </div>
           )}
 
           {/* Explainability Visualizations */}
-          {(gradCam || saliency) && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {(gradCam || saliency || waveform) && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {gradCam && (
                 <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
                   <div className="bg-purple-900 px-4 py-2">
@@ -1336,6 +1409,16 @@ function CombinedTab({ onResult }) {
                   </div>
                   <div className="p-4">
                     <img src={`data:image/png;base64,${gradCam}`} alt="Grad-CAM" className="w-full rounded-lg" />
+                  </div>
+                </div>
+              )}
+              {waveform && (
+                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                  <div className="bg-purple-900 px-4 py-2">
+                    <span className="text-purple-300 text-sm font-medium">Audio Waveform</span>
+                  </div>
+                  <div className="p-4">
+                    <img src={`data:image/png;base64,${waveform}`} alt="Waveform" className="w-full rounded-lg" />
                   </div>
                 </div>
               )}

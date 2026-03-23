@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import numpy as np
 import cv2
 import librosa
+import librosa.display
 import matplotlib.pyplot as plt
 from PIL import Image
 from io import BytesIO
@@ -66,29 +67,66 @@ class GradCAM:
         target_score = output.logits[0, target_class]
         target_score.backward()
         
-        # Compute Grad-CAM
-        gradients = self.gradients[0]  # (num_patches, channels)
-        activations = self.activations[0]  # (num_patches, channels)
-        
-        # Weight activations by gradients
-        weights = gradients.mean(dim=1)  # (num_patches,)
-        cam = torch.sum(weights.unsqueeze(1) * activations, dim=1)  # (num_patches,)
-        
-        # ReLU to keep only positive contributions
-        cam = F.relu(cam)
-        
-        # Normalize
-        if cam.max() > 0:
-            cam = cam / cam.max()
-        
-        # Reshape to grid (assuming 14x14 patches for 224x224 input)
-        cam = cam.cpu().numpy()
-        cam = cam.reshape(14, 14)
-        
-        # Resize to original image size
-        cam = cv2.resize(cam, (224, 224), interpolation=cv2.INTER_LINEAR)
-        
-        return cam
+        if self.gradients is None or self.activations is None:
+            raise RuntimeError("Grad-CAM hooks did not capture gradients/activations")
+
+        # Compute token-level relevance for ViT-style outputs.
+        gradients = self.gradients[0]
+        activations = self.activations[0]
+
+        if gradients.ndim == 1:
+            gradients = gradients.unsqueeze(0)
+        if activations.ndim == 1:
+            activations = activations.unsqueeze(0)
+
+        if gradients.shape != activations.shape:
+            raise RuntimeError(
+                f"Gradient/activation shape mismatch: {gradients.shape} vs {activations.shape}"
+            )
+
+        cam_tokens = torch.mean(gradients * activations, dim=-1)
+
+        # Drop CLS token when present (common in ViT), then ensure square token grid.
+        if cam_tokens.numel() > 1:
+            maybe_grid = int(np.sqrt(cam_tokens.numel() - 1))
+            if maybe_grid * maybe_grid == cam_tokens.numel() - 1:
+                cam_tokens = cam_tokens[1:]
+
+        token_count = cam_tokens.numel()
+        grid_size = int(np.sqrt(token_count))
+
+        if grid_size * grid_size != token_count:
+            # Fallback for non-square token counts: keep largest square subset.
+            usable = grid_size * grid_size
+            if usable == 0:
+                raise RuntimeError(f"Invalid token count for Grad-CAM: {token_count}")
+            cam_tokens = cam_tokens[:usable]
+
+        cam = F.relu(cam_tokens)
+        if torch.max(cam) > 0:
+            cam = cam / torch.max(cam)
+
+        cam = cam.cpu().numpy().reshape(grid_size, grid_size)
+        return cv2.resize(cam, (224, 224), interpolation=cv2.INTER_LINEAR)
+
+
+def _robust_normalize(arr: np.ndarray, low_pct: float = 2.0, high_pct: float = 98.0) -> np.ndarray:
+    """Normalize with percentile clipping to improve contrast in low-variance maps."""
+    arr = np.asarray(arr, dtype=np.float32)
+    if arr.size == 0:
+        return arr
+
+    lo = np.percentile(arr, low_pct)
+    hi = np.percentile(arr, high_pct)
+    if hi <= lo:
+        min_v = float(np.min(arr))
+        max_v = float(np.max(arr))
+        if max_v <= min_v:
+            return np.zeros_like(arr, dtype=np.float32)
+        return (arr - min_v) / (max_v - min_v)
+
+    clipped = np.clip(arr, lo, hi)
+    return (clipped - lo) / (hi - lo)
 
 
 def generate_grad_cam(
@@ -118,18 +156,26 @@ def generate_grad_cam(
         inputs = processor(image, return_tensors='pt').to(device)
         input_tensor = inputs['pixel_values']
         
-        # Initialize Grad-CAM
+        # Use a late transformer block layer for stronger spatial attribution.
         target_layer = model.vit.layernorm
+        if hasattr(model, 'vit') and hasattr(model.vit, 'encoder') and hasattr(model.vit.encoder, 'layer'):
+            if len(model.vit.encoder.layer) > 0 and hasattr(model.vit.encoder.layer[-1], 'layernorm_after'):
+                target_layer = model.vit.encoder.layer[-1].layernorm_after
         grad_cam = GradCAM(model, target_layer)
         
         # Generate heatmap
-        heatmap = grad_cam.generate(input_tensor, emotion_idx)
-        grad_cam.remove_hooks()
+        try:
+            heatmap = grad_cam.generate(input_tensor, emotion_idx)
+        finally:
+            grad_cam.remove_hooks()
         
         # Convert original image to array
         img_array = np.array(image)
         
         # Create visualization
+        heatmap = _robust_normalize(heatmap)
+        heatmap = cv2.GaussianBlur(heatmap, (9, 9), 0)
+
         # Apply colormap to heatmap
         heatmap_colored = cv2.applyColorMap(
             (heatmap * 255).astype(np.uint8),
@@ -146,9 +192,16 @@ def generate_grad_cam(
         # Convert BGR to RGB for PIL
         heatmap_rgb = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB)
         
-        # Blend original image with heatmap (30% transparency)
-        alpha = 0.3
+        # Blend original image with stronger heatmap visibility.
+        alpha = 0.55
         blended = cv2.addWeighted(img_array, 1 - alpha, heatmap_rgb, alpha, 0)
+
+        # Draw contour around most influential regions to make attribution obvious.
+        threshold = np.percentile(heatmap, 80)
+        mask = (heatmap >= threshold).astype(np.uint8) * 255
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            cv2.drawContours(blended, contours, -1, (255, 255, 0), 2)
         
         # Convert original image to base64
         img_pil = Image.fromarray(img_array)
@@ -194,6 +247,12 @@ def generate_audio_saliency(
         Tuple of (spectrogram_base64, saliency_base64)
     """
     try:
+        if audio is None or len(audio) == 0:
+            raise ValueError("Audio input is empty")
+
+        audio = np.asarray(audio, dtype=np.float32)
+        audio = np.nan_to_num(audio)
+
         # Prepare input
         inputs = processor(
             audio,
@@ -214,11 +273,29 @@ def generate_audio_saliency(
         target_score.backward()
         
         # Get saliency map (gradient magnitude)
+        if input_values.grad is None:
+            raise RuntimeError("No gradients captured for audio saliency")
+
         saliency = torch.abs(input_values.grad).cpu().detach().numpy()
-        saliency = saliency[0]  # Remove batch dimension
-        
-        # Normalize saliency
-        saliency = np.mean(saliency, axis=0)  # Average across channels
+
+        # Normalize to a 1D time-importance sequence regardless of model output shape.
+        if saliency.ndim == 3:
+            saliency = np.mean(saliency, axis=1)[0]
+        elif saliency.ndim == 2:
+            saliency = saliency[0]
+        elif saliency.ndim == 1:
+            pass
+        else:
+            saliency = saliency.reshape(-1)
+
+        saliency = np.asarray(saliency).reshape(-1)
+
+        # Smooth temporal saliency and improve dynamic range for clearer plots.
+        if saliency.size > 7:
+            kernel = np.ones(7, dtype=np.float32) / 7.0
+            saliency = np.convolve(saliency, kernel, mode='same')
+
+        saliency = _robust_normalize(saliency, low_pct=5.0, high_pct=99.0)
         if np.max(saliency) > 0:
             saliency = saliency / np.max(saliency)
         
@@ -227,7 +304,11 @@ def generate_audio_saliency(
         S_db = librosa.power_to_db(S, ref=np.max)
         
         # Normalize spectrogram for visualization
-        S_norm = (S_db - S_db.min()) / (S_db.max() - S_db.min())
+        s_range = S_db.max() - S_db.min()
+        if s_range > 0:
+            S_norm = (S_db - S_db.min()) / s_range
+        else:
+            S_norm = np.zeros_like(S_db)
         
         # Create figure for original spectrogram
         fig1, ax1 = plt.subplots(figsize=(10, 4), dpi=100)
@@ -241,8 +322,15 @@ def generate_audio_saliency(
         spec_base64 = base64.b64encode(spec_buffer.getvalue()).decode()
         plt.close(fig1)
         
-        # Create figure with saliency overlay
-        fig2, ax2 = plt.subplots(figsize=(10, 4), dpi=100)
+        # Create figure with saliency overlay + timeline for clear explanation.
+        fig2, (ax2, ax3) = plt.subplots(
+            2,
+            1,
+            figsize=(10, 5.5),
+            dpi=100,
+            gridspec_kw={'height_ratios': [3, 1]},
+            sharex=False
+        )
         
         # Resize saliency to match spectrogram size if needed
         if saliency.shape[0] != S_db.shape[1]:
@@ -266,23 +354,34 @@ def generate_audio_saliency(
             interpolation='bilinear'
         )
         
-        # Overlay saliency with jet colormap
-        saliency_cmap = plt.cm.jet(saliency_map)
+        # Overlay saliency with stronger opacity.
         ax2.imshow(
             saliency_map,
             aspect='auto',
             origin='lower',
-            cmap='jet',
-            alpha=0.4,
+            cmap='magma',
+            alpha=0.65,
             interpolation='bilinear'
         )
         
         ax2.set_title(f'Audio Saliency Map - {emotions_list[emotion_idx]} (Red = Important)')
         ax2.set_xlabel('Time')
         ax2.set_ylabel('Mel Frequency')
+
+        # Add explicit 1D saliency timeline with highlighted peaks.
+        peak_thr = np.percentile(saliency_resized, 85)
+        x = np.arange(len(saliency_resized))
+        ax3.plot(x, saliency_resized, color='#f97316', linewidth=1.5)
+        ax3.fill_between(x, 0, saliency_resized, where=saliency_resized >= peak_thr, color='#ef4444', alpha=0.35)
+        ax3.axhline(peak_thr, color='#ef4444', linestyle='--', linewidth=1, alpha=0.8)
+        ax3.set_ylim(0, 1.05)
+        ax3.set_ylabel('Saliency')
+        ax3.set_xlabel('Time steps')
+        ax3.grid(alpha=0.2)
         
         # Save saliency visualization
         saliency_buffer = BytesIO()
+        fig2.tight_layout()
         fig2.savefig(saliency_buffer, format='PNG', bbox_inches='tight', dpi=100)
         saliency_base64 = base64.b64encode(saliency_buffer.getvalue()).decode()
         plt.close(fig2)
