@@ -1627,6 +1627,7 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
 
 function MarketingPage() {
   const navigate = useNavigate();
+  const openExternal = (url) => window.open(url, '_blank', 'noopener,noreferrer');
 
   return (
     <div className="mmer-marketing">
@@ -1639,47 +1640,89 @@ function MarketingPage() {
       </header>
 
       <section className="mmer-section mmer-hero">
-        <h1>Multimodal Emotion Intelligence for Modern Teams</h1>
+        <p className="mmer-eyebrow">Multimodal Emotion Recognition</p>
+        <h1>If Someone Says "I'm Fine." Are They Really?</h1>
         <p>
-          Analyze face, voice, and combined emotional signals with explainability and production-grade insights.
+          MMER analyzes facial expressions and vocal tone at the same time, then computes a concordance score to show whether both signals align.
+          It is built for explainable, privacy-first emotion intelligence.
         </p>
+        <div className="mmer-trust-strip">200+ early-access signups from research and industry teams.</div>
         <div className="mmer-hero-actions">
-          <button className="mmer-primary-btn" onClick={() => navigate('/signup')}>Start Free</button>
-          <button className="mmer-link-btn" onClick={() => navigate('/login')}>Sign In</button>
+          <button className="mmer-primary-btn" onClick={() => openExternal('https://huggingface.co/spaces/Nishvaraj/MMER')}>Try Demo Free</button>
+          <button className="mmer-link-btn" onClick={() => openExternal('https://sites.google.com/view/mmer-webapp/how-it-works')}>See How It Works</button>
+          <button className="mmer-link-btn" onClick={() => navigate('/signup')}>Create Workspace</button>
         </div>
       </section>
 
       <section className="mmer-section">
-        <h2>Features</h2>
+        <h2>What Makes MMER Different?</h2>
         <div className="mmer-feature-grid">
           <article className="mmer-feature-card">
-            <h3>Unified Analysis</h3>
-            <p>Facial, speech, and multimodal scoring in one workspace.</p>
+            <h3>Dual Modality Analysis</h3>
+            <p>Vision Transformer + HuBERT run together so face and voice are analyzed in one pass, not in isolation.</p>
           </article>
           <article className="mmer-feature-card">
-            <h3>Explainability</h3>
-            <p>Grad-CAM and saliency visualization for transparent predictions.</p>
+            <h3>Novel Concordance Metric</h3>
+            <p>Measure emotional authenticity by comparing face and voice agreement. Higher concordance means stronger alignment.</p>
           </article>
           <article className="mmer-feature-card">
-            <h3>Operational Metrics</h3>
-            <p>Track usage, trendline performance, and engagement KPIs.</p>
+            <h3>Privacy by Architecture</h3>
+            <p>Designed for local-first processing with explainable outputs and no mandatory cloud storage workflow.</p>
           </article>
         </div>
       </section>
 
       <section className="mmer-section">
-        <h2>How It Works</h2>
-        <ol className="mmer-steps">
-          <li>Upload or capture inputs from webcam and microphone.</li>
-          <li>Run inference with dedicated facial and speech models.</li>
-          <li>Inspect confidence scores and explainability overlays.</li>
-          <li>Monitor results through a protected analytics console.</li>
-        </ol>
+        <h2>Benchmarks and Coverage</h2>
+        <div className="mmer-stat-grid">
+          <article className="mmer-stat-card">
+            <div className="mmer-stat-value">87.50%</div>
+            <div className="mmer-stat-label">Speech Accuracy</div>
+            <div className="mmer-stat-meta">HuBERT · RAVDESS</div>
+          </article>
+          <article className="mmer-stat-card">
+            <div className="mmer-stat-value">71.29%</div>
+            <div className="mmer-stat-label">Facial Accuracy</div>
+            <div className="mmer-stat-meta">ViT · FER-2013</div>
+          </article>
+          <article className="mmer-stat-card">
+            <div className="mmer-stat-value">7</div>
+            <div className="mmer-stat-label">Emotion Classes</div>
+            <div className="mmer-stat-meta">Happy · Sad · Angry · Fear · Disgust · Surprise · Neutral</div>
+          </article>
+          <article className="mmer-stat-card">
+            <div className="mmer-stat-value">Novel</div>
+            <div className="mmer-stat-label">Concordance Metric</div>
+            <div className="mmer-stat-meta">First open-access implementation in this workflow</div>
+          </article>
+        </div>
+      </section>
+
+      <section className="mmer-section">
+        <h2>Who Is MMER For?</h2>
+        <div className="mmer-feature-grid">
+          <article className="mmer-feature-card">
+            <h3>Mental Health Professionals</h3>
+            <p>Support therapy observations with an objective concordance signal and explainable model outputs.</p>
+          </article>
+          <article className="mmer-feature-card">
+            <h3>HR and Wellness Teams</h3>
+            <p>Enable consent-based emotional self-reflection workflows for coaching and leadership development.</p>
+          </article>
+          <article className="mmer-feature-card">
+            <h3>Academic Researchers</h3>
+            <p>Use open, reproducible multimodal analysis with visualization outputs suitable for technical reporting.</p>
+          </article>
+        </div>
       </section>
 
       <section className="mmer-section mmer-cta">
-        <h2>Ready to build emotion-aware experiences?</h2>
-        <button className="mmer-primary-btn" onClick={() => navigate('/signup')}>Get Started</button>
+        <h2>Join the Early Access Queue</h2>
+        <p>Receive development updates and priority access to new multimodal features.</p>
+        <div className="mmer-hero-actions">
+          <button className="mmer-primary-btn" onClick={() => openExternal('https://forms.gle/b5g3245J4Y4Ta3M37')}>Early Access</button>
+          <button className="mmer-link-btn" onClick={() => navigate('/login')}>Sign In</button>
+        </div>
       </section>
     </div>
   );

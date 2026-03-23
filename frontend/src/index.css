@@ -186,6 +186,28 @@ code {
   max-width: 760px;
 }
 
+.mmer-eyebrow {
+  margin: 0 0 10px;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid #c4d8fb;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: #2257ad;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mmer-trust-strip {
+  margin-bottom: 18px;
+  color: var(--ga-muted);
+  font-size: 14px;
+}
+
 .mmer-hero p {
   margin: 16px 0 24px;
   max-width: 700px;
@@ -234,11 +256,50 @@ code {
   font-size: 14px;
 }
 
+.mmer-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.mmer-stat-card {
+  background: #fff;
+  border: 1px solid var(--ga-border);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: var(--ga-shadow);
+}
+
+.mmer-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f3f8f;
+  margin-bottom: 8px;
+}
+
+.mmer-stat-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ga-text);
+  margin-bottom: 6px;
+}
+
+.mmer-stat-meta {
+  font-size: 12px;
+  color: var(--ga-muted);
+  line-height: 1.4;
+}
+
 .mmer-cta {
   margin-top: 8px;
   margin-bottom: 40px;
   border-top: 1px solid var(--ga-border);
   text-align: left;
+}
+
+.mmer-cta p {
+  margin: 0 0 18px;
+  color: var(--ga-muted);
 }
 
 /* Shell */
@@ -797,6 +858,10 @@ select {
   }
 
   .mmer-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mmer-stat-grid {
     grid-template-columns: 1fr;
   }
 
