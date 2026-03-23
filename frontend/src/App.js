@@ -32,9 +32,16 @@ function FacialTab({ onResult }) {
   const [error, setError] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const cameraStreamRef = useRef(null);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [showGradCAM, setShowGradCAM] = useState(false);
   const [gradCam, setGradCam] = useState(null);
+
+  useEffect(() => {
+    if (isCameraOn && videoRef.current && cameraStreamRef.current) {
+      videoRef.current.srcObject = cameraStreamRef.current;
+    }
+  }, [isCameraOn]);
 
   const handleImageSelect = (e) => {
     const file = e.target.files[0];
@@ -53,11 +60,9 @@ function FacialTab({ onResult }) {
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setIsCameraOn(true);
-        setError(null);
-      }
+      cameraStreamRef.current = stream;
+      setIsCameraOn(true);
+      setError(null);
     } catch (err) {
       setError('Cannot access camera');
     }
@@ -78,10 +83,14 @@ function FacialTab({ onResult }) {
   };
 
   const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach(track => track.stop());
-      setIsCameraOn(false);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    setIsCameraOn(false);
   };
 
   const analyzeFacial = async () => {
@@ -600,34 +609,241 @@ function SpeechTab({ onResult }) {
 
 // ============== COMBINED ANALYSIS TAB ==============
 function CombinedTab({ onResult }) {
+  const [inputMode, setInputMode] = useState('separate');
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [audioFile, setAudioFile] = useState(null);
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
+
+  const [isCameraOn, setIsCameraOn] = useState(false);
+  const imageVideoRef = useRef(null);
+  const imageCanvasRef = useRef(null);
+  const imageCameraStreamRef = useRef(null);
+
+  const [isAudioRecording, setIsAudioRecording] = useState(false);
+  const audioRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const audioStreamRef = useRef(null);
+
+  const [isVideoCameraOn, setIsVideoCameraOn] = useState(false);
+  const [isVideoRecording, setIsVideoRecording] = useState(false);
+  const videoLiveRef = useRef(null);
+  const videoRecorderRef = useRef(null);
+  const videoChunksRef = useRef([]);
+  const videoStreamRef = useRef(null);
+
   const [facialEmotion, setFacialEmotion] = useState(null);
   const [speechEmotion, setSpeechEmotion] = useState(null);
   const [concordance, setConcordance] = useState(null);
   const [facialProbs, setFacialProbs] = useState(null);
   const [speechProbs, setSpeechProbs] = useState(null);
+  const [videoResult, setVideoResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showGradCAM, setShowGradCAM] = useState(false);
-  const [showSaliency, setShowSaliency] = useState(false);
+  const [showExplainability, setShowExplainability] = useState(false);
   const [gradCam, setGradCam] = useState(null);
   const [saliency, setSaliency] = useState(null);
+
+  useEffect(() => {
+    return () => {
+      if (videoPreviewUrl) {
+        URL.revokeObjectURL(videoPreviewUrl);
+      }
+      if (imageCameraStreamRef.current) {
+        imageCameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (videoStreamRef.current) {
+        videoStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [videoPreviewUrl]);
+
+  useEffect(() => {
+    if (isCameraOn && imageVideoRef.current && imageCameraStreamRef.current) {
+      imageVideoRef.current.srcObject = imageCameraStreamRef.current;
+    }
+  }, [isCameraOn]);
+
+  useEffect(() => {
+    if (isVideoCameraOn && videoLiveRef.current && videoStreamRef.current) {
+      videoLiveRef.current.srcObject = videoStreamRef.current;
+    }
+  }, [isVideoCameraOn]);
+
+  const resetResults = () => {
+    setFacialEmotion(null);
+    setSpeechEmotion(null);
+    setConcordance(null);
+    setFacialProbs(null);
+    setSpeechProbs(null);
+    setVideoResult(null);
+    setGradCam(null);
+    setSaliency(null);
+  };
+
+  const switchMode = (mode) => {
+    setInputMode(mode);
+    setError(null);
+    resetResults();
+  };
 
   const handleImageSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
       setImageFile(file);
       const reader = new FileReader();
-      reader.onload = (evt) => setImagePreview(evt.target.result);
+      reader.onload = (evt) => {
+        setImagePreview(evt.target.result);
+        resetResults();
+      };
       reader.readAsDataURL(file);
     }
   };
 
   const handleAudioSelect = (e) => {
     const file = e.target.files[0];
-    if (file) setAudioFile(file);
+    if (file) {
+      setAudioFile(file);
+      resetResults();
+    }
+  };
+
+  const startImageCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      imageCameraStreamRef.current = stream;
+      setIsCameraOn(true);
+      setError(null);
+    } catch (err) {
+      setError('Cannot access webcam for image capture');
+    }
+  };
+
+  const stopImageCamera = () => {
+    if (imageVideoRef.current) {
+      imageVideoRef.current.srcObject = null;
+    }
+    if (imageCameraStreamRef.current) {
+      imageCameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      imageCameraStreamRef.current = null;
+    }
+    setIsCameraOn(false);
+  };
+
+  const captureImage = () => {
+    if (!imageVideoRef.current || !imageCanvasRef.current) return;
+    const ctx = imageCanvasRef.current.getContext('2d');
+    ctx.drawImage(imageVideoRef.current, 0, 0, imageCanvasRef.current.width, imageCanvasRef.current.height);
+    imageCanvasRef.current.toBlob((blob) => {
+      if (!blob) return;
+      const captured = new File([blob], `capture-${Date.now()}.png`, { type: 'image/png' });
+      setImageFile(captured);
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        setImagePreview(evt.target.result);
+        resetResults();
+      };
+      reader.readAsDataURL(captured);
+      stopImageCamera();
+    }, 'image/png');
+  };
+
+  const startAudioRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      audioRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
+      recorder.onstop = () => {
+        const mimeType = audioChunksRef.current[0]?.type || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
+        const recorded = new File([blob], `recorded-audio-${Date.now()}.${ext}`, { type: mimeType });
+        setAudioFile(recorded);
+        resetResults();
+      };
+      recorder.start();
+      setIsAudioRecording(true);
+      setError(null);
+    } catch (err) {
+      setError('Cannot access microphone');
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (audioRecorderRef.current && isAudioRecording) {
+      audioRecorderRef.current.stop();
+      setIsAudioRecording(false);
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
+        audioStreamRef.current = null;
+      }
+    }
+  };
+
+  const handleVideoSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+    setVideoFile(file);
+    setVideoPreviewUrl(URL.createObjectURL(file));
+    resetResults();
+  };
+
+  const startVideoCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      videoStreamRef.current = stream;
+      setIsVideoCameraOn(true);
+      setError(null);
+    } catch (err) {
+      setError('Cannot access camera/microphone for video recording');
+    }
+  };
+
+  const stopVideoCamera = () => {
+    if (videoLiveRef.current) {
+      videoLiveRef.current.srcObject = null;
+    }
+    if (videoStreamRef.current) {
+      videoStreamRef.current.getTracks().forEach((track) => track.stop());
+      videoStreamRef.current = null;
+    }
+    setIsVideoCameraOn(false);
+    setIsVideoRecording(false);
+  };
+
+  const startVideoRecording = () => {
+    if (!videoStreamRef.current) return;
+    videoChunksRef.current = [];
+    const recorder = new MediaRecorder(videoStreamRef.current);
+    videoRecorderRef.current = recorder;
+    recorder.ondataavailable = (e) => videoChunksRef.current.push(e.data);
+    recorder.onstop = () => {
+      const mimeType = videoChunksRef.current[0]?.type || 'video/webm';
+      const blob = new Blob(videoChunksRef.current, { type: mimeType });
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const recorded = new File([blob], `recorded-video-${Date.now()}.${ext}`, { type: mimeType });
+      if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+      setVideoFile(recorded);
+      setVideoPreviewUrl(URL.createObjectURL(recorded));
+      resetResults();
+    };
+    recorder.start();
+    setIsVideoRecording(true);
+  };
+
+  const stopVideoRecording = () => {
+    if (videoRecorderRef.current && isVideoRecording) {
+      videoRecorderRef.current.stop();
+      setIsVideoRecording(false);
+    }
   };
 
   const analyzeCombined = async () => {
@@ -644,7 +860,7 @@ function CombinedTab({ onResult }) {
       formData.append('image_file', imageFile);
       formData.append('audio_file', audioFile);
       
-      const explainParam = (showGradCAM || showSaliency) ? '?explain=true' : '';
+      const explainParam = showExplainability ? '?explain=true' : '';
       const response = await axios.post(`${API_BASE}/api/predict/combined${explainParam}`, formData);
       if (response.data.success) {
         setFacialEmotion(response.data.facial_emotion.emotion);
@@ -674,8 +890,72 @@ function CombinedTab({ onResult }) {
               facial: response.data.facial_emotion.probabilities,
               speech: response.data.speech_emotion.probabilities
             },
-            explainability: response.data.explainability ? 'grad-cam + saliency' : 'none',
+            explainability: response.data.explainability ? 'enabled' : 'none',
             concordance: response.data.concordance,
+            createdAt: new Date().toISOString(),
+            note: '',
+            pinned: false
+          });
+        }
+      }
+    } catch (err) {
+      setError('API Error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const analyzeVideo = async () => {
+    if (!videoFile) {
+      setError('Please upload or record a video first');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setGradCam(null);
+    setSaliency(null);
+    setVideoResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', videoFile, videoFile.name || `video-${Date.now()}.webm`);
+      const explainParam = showExplainability ? '?explain=true' : '';
+      const response = await axios.post(`${API_BASE}/api/predict/video${explainParam}`, formData);
+      if (response.data.success) {
+        const face = response.data.facial_emotion?.emotion || 'unknown';
+        const speech = response.data.speech_emotion?.emotion || 'unknown';
+        const videoConcordance = face === speech ? 'MATCH' : 'MISMATCH';
+
+        setVideoResult(response.data);
+        setFacialEmotion(face);
+        setSpeechEmotion(speech);
+        setConcordance(videoConcordance);
+        setFacialProbs(response.data.facial_emotion?.probabilities || null);
+        setSpeechProbs(response.data.speech_emotion?.probabilities || null);
+
+        if (response.data.explainability) {
+          if (response.data.explainability.grad_cam) {
+            setGradCam(response.data.explainability.grad_cam);
+          }
+          if (response.data.explainability.saliency) {
+            setSaliency(response.data.explainability.saliency);
+          }
+        }
+
+        if (onResult) {
+          onResult({
+            id: `video-${Date.now()}`,
+            modality: 'multimodal',
+            emotion: `${response.data.combined_emotion || 'unknown'} (video)`,
+            confidence: Math.max(
+              response.data.facial_emotion?.confidence || 0,
+              response.data.speech_emotion?.confidence || 0
+            ),
+            probabilities: {
+              facial: response.data.facial_emotion?.probabilities || {},
+              speech: response.data.speech_emotion?.probabilities || {}
+            },
+            explainability: showExplainability ? 'requested' : 'none',
+            concordance: videoConcordance,
             createdAt: new Date().toISOString(),
             note: '',
             pinned: false
@@ -691,7 +971,32 @@ function CombinedTab({ onResult }) {
 
   return (
     <div className="space-y-4">
+      <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
+        <h3 className="text-slate-50 font-semibold mb-1">Analyze Face and Voice Together</h3>
+        <p className="text-slate-400 text-sm">
+          Choose one mode: use separate image + audio inputs (upload or live capture), or analyze a single uploaded/recorded video.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => switchMode('separate')}
+          className={`ga-header-btn ${inputMode === 'separate' ? 'active' : ''}`}
+        >
+          📷 + 🎤 Separate Inputs
+        </button>
+        <button
+          type="button"
+          onClick={() => switchMode('video')}
+          className={`ga-header-btn ${inputMode === 'video' ? 'active' : ''}`}
+        >
+          🎥 Video Input
+        </button>
+      </div>
+
       {/* Input Section */}
+      {inputMode === 'separate' && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Image Upload */}
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
@@ -699,20 +1004,42 @@ function CombinedTab({ onResult }) {
             <span className="text-purple-300 text-sm font-medium">Image Input</span>
           </div>
           <div className="p-4">
-            {!imagePreview ? (
-              <label className="cursor-pointer block">
-                <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
-                  <p className="text-slate-400 mb-2">Upload Image</p>
-                  <p className="text-slate-500 text-sm">Click or drag to upload</p>
+            {!imagePreview && !isCameraOn && (
+              <div className="space-y-3">
+                <label className="cursor-pointer block">
+                  <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
+                    <p className="text-slate-400 mb-2">Upload Image</p>
+                    <p className="text-slate-500 text-sm">Drop Image Here or Click to Upload</p>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageSelect}
+                    className="hidden"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={startImageCamera}
+                  className="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg"
+                >
+                  Capture with Webcam
+                </button>
+              </div>
+            )}
+
+            {isCameraOn && (
+              <div>
+                <video ref={imageVideoRef} autoPlay playsInline className="w-full rounded-lg mb-3" />
+                <canvas ref={imageCanvasRef} width="640" height="480" className="hidden" />
+                <div className="flex gap-2">
+                  <button type="button" onClick={captureImage} className="flex-1 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg">Capture</button>
+                  <button type="button" onClick={stopImageCamera} className="flex-1 bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg">Cancel</button>
                 </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageSelect}
-                  className="hidden"
-                />
-              </label>
-            ) : (
+              </div>
+            )}
+
+            {imagePreview && !isCameraOn && (
               <div>
                 <img src={imagePreview} alt="Preview" className="w-full rounded-lg mb-3" />
                 <label className="cursor-pointer block text-center">
@@ -737,20 +1064,40 @@ function CombinedTab({ onResult }) {
             <span className="text-purple-300 text-sm font-medium">Audio Input</span>
           </div>
           <div className="p-4">
-            {!audioFile ? (
-              <label className="cursor-pointer block">
-                <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
-                  <p className="text-slate-400 mb-2">Upload Audio</p>
-                  <p className="text-slate-500 text-sm">Click or drag to upload</p>
-                </div>
-                <input
-                  type="file"
-                  accept="audio/*"
-                  onChange={handleAudioSelect}
-                  className="hidden"
-                />
-              </label>
-            ) : (
+            {!audioFile && !isAudioRecording && (
+              <div className="space-y-3">
+                <label className="cursor-pointer block">
+                  <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
+                    <p className="text-slate-400 mb-2">Upload Audio</p>
+                    <p className="text-slate-500 text-sm">Drop Audio Here or Click to Upload</p>
+                  </div>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={handleAudioSelect}
+                    className="hidden"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={startAudioRecording}
+                  className="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg"
+                >
+                  Record Live with Mic
+                </button>
+              </div>
+            )}
+
+            {isAudioRecording && (
+              <div className="text-center">
+                <div className="text-red-400 font-semibold mb-3">Recording...</div>
+                <button type="button" onClick={stopAudioRecording} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg">
+                  Stop Recording
+                </button>
+              </div>
+            )}
+
+            {audioFile && !isAudioRecording && (
               <div className="text-center">
                 <div className="bg-slate-700 rounded-lg p-8 mb-3">
                   <div className="text-green-400 font-semibold">Audio Loaded</div>
@@ -771,49 +1118,102 @@ function CombinedTab({ onResult }) {
           </div>
         </div>
       </div>
+      )}
 
-      {/* Explainability Options */}
-      {imageFile && audioFile && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showGradCAM}
-                onChange={(e) => setShowGradCAM(e.target.checked)}
-                className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-purple-600 focus:ring-purple-500"
-              />
-              <div>
-                <div className="text-slate-50 font-medium">Facial Grad-CAM</div>
-                <div className="text-slate-400 text-sm mt-1">Visualize facial attention</div>
-              </div>
-            </label>
+      {inputMode === 'video' && (
+        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+          <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
+            <span className="text-purple-300 text-sm font-medium">Video Input</span>
           </div>
-          <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showSaliency}
-                onChange={(e) => setShowSaliency(e.target.checked)}
-                className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-purple-600 focus:ring-purple-500"
-              />
-              <div>
-                <div className="text-slate-50 font-medium">Audio Saliency</div>
-                <div className="text-slate-400 text-sm mt-1">Visualize audio frequencies</div>
+          <div className="p-4 space-y-4">
+            <p className="text-slate-400 text-sm">Upload a video with face + voice, or record one live using webcam and microphone.</p>
+            {!isVideoCameraOn && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <label className="cursor-pointer block">
+                  <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
+                    <p className="text-slate-400 mb-2">Upload Video</p>
+                    <p className="text-slate-500 text-sm">Drop Video Here or Click to Upload</p>
+                  </div>
+                  <input type="file" accept="video/*" onChange={handleVideoSelect} className="hidden" />
+                </label>
+                <button
+                  type="button"
+                  onClick={startVideoCamera}
+                  className="bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg"
+                >
+                  Record Live Video (Cam + Mic)
+                </button>
               </div>
-            </label>
+            )}
+
+            {isVideoCameraOn && (
+              <div>
+                <video ref={videoLiveRef} autoPlay playsInline muted className="w-full rounded-lg mb-3" />
+                <div className="flex flex-wrap gap-2">
+                  {!isVideoRecording ? (
+                    <button type="button" onClick={startVideoRecording} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg">
+                      Start Recording
+                    </button>
+                  ) : (
+                    <button type="button" onClick={stopVideoRecording} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg">
+                      Stop Recording
+                    </button>
+                  )}
+                  <button type="button" onClick={stopVideoCamera} className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-lg">
+                    Close Camera
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {videoPreviewUrl && (
+              <div>
+                <video src={videoPreviewUrl} controls className="w-full rounded-lg" />
+                <div className="text-slate-400 text-xs mt-2">Video ready for multimodal analysis.</div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
+      {/* Explainability Options */}
+      {((inputMode === 'separate' && imageFile && audioFile) || (inputMode === 'video' && videoFile)) && (
+        <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showExplainability}
+              onChange={(e) => setShowExplainability(e.target.checked)}
+              className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-purple-600 focus:ring-purple-500"
+            />
+            <div>
+              <div className="text-slate-50 font-medium">Enable Explainability Output</div>
+              <div className="text-slate-400 text-sm mt-1">
+                Returns Grad-CAM and/or saliency visualizations when supported by the selected analysis mode.
+              </div>
+            </div>
+          </label>
+        </div>
+      )}
+
       {/* Analyze Button */}
-      {imageFile && audioFile && (
+      {inputMode === 'separate' && imageFile && audioFile && (
         <button
           onClick={analyzeCombined}
           disabled={loading}
           className="w-full bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50"
         >
-          {loading ? 'Analyzing...' : 'Analyze Both'}
+          {loading ? 'Analyzing...' : '🚀 Analyze Both'}
+        </button>
+      )}
+
+      {inputMode === 'video' && videoFile && (
+        <button
+          onClick={analyzeVideo}
+          disabled={loading}
+          className="w-full bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50"
+        >
+          {loading ? 'Analyzing...' : '🚀 Analyze Video'}
         </button>
       )}
 
@@ -826,6 +1226,20 @@ function CombinedTab({ onResult }) {
       {/* Results */}
       {facialEmotion && speechEmotion && (
         <div className="space-y-4">
+          <div className={`rounded-xl p-3 text-sm font-medium ${
+            showExplainability
+              ? (gradCam || saliency)
+                ? 'bg-green-900/40 border border-green-700 text-green-200'
+                : 'bg-amber-900/40 border border-amber-700 text-amber-200'
+              : 'bg-slate-800 border border-slate-700 text-slate-300'
+          }`}>
+            {showExplainability
+              ? (gradCam || saliency)
+                ? 'Explainability generated successfully.'
+                : 'Explainability was requested but no maps were returned for this input.'
+              : 'Explainability is off. Enable the toggle to request Grad-CAM and saliency outputs.'}
+          </div>
+
           {/* Concordance Banner */}
           <div className={`rounded-xl p-4 text-center font-semibold text-lg ${
             concordance === 'MATCH' 
@@ -901,7 +1315,7 @@ function CombinedTab({ onResult }) {
           </div>
 
           {/* Annotated Face */}
-          {imagePreview && (
+          {inputMode === 'separate' && imagePreview && (
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
               <div className="bg-purple-900 px-4 py-2">
                 <span className="text-purple-300 text-sm font-medium">Annotated Face</span>
@@ -935,6 +1349,20 @@ function CombinedTab({ onResult }) {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {inputMode === 'video' && videoResult && (
+            <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+              <div className="bg-purple-900 px-4 py-2">
+                <span className="text-purple-300 text-sm font-medium">Video Analysis Details</span>
+              </div>
+              <div className="p-4 text-sm text-slate-300 space-y-2">
+                <div>Combined Emotion: <span className="text-slate-100 font-semibold">{videoResult.combined_emotion}</span></div>
+                <div>Frames Processed: <span className="text-slate-100 font-semibold">{videoResult.frames_processed}</span></div>
+                <div>Duration: <span className="text-slate-100 font-semibold">{Number(videoResult.video_duration || 0).toFixed(2)}s</span></div>
+                <div>FPS: <span className="text-slate-100 font-semibold">{Number(videoResult.fps || 0).toFixed(2)}</span></div>
+              </div>
             </div>
           )}
         </div>
@@ -1451,13 +1879,22 @@ function DashboardConsole({ authUser, onLogout }) {
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
   const tabs = [
-    { id: 0, icon: 'OV', label: 'Overview' },
-    { id: 1, icon: 'FA', label: 'Facial Analysis' },
-    { id: 2, icon: 'SA', label: 'Speech Analysis' },
-    { id: 3, icon: 'MA', label: 'Multimodal Analysis' },
-    { id: 4, icon: 'MI', label: 'Model Information' },
-    { id: 5, icon: 'HI', label: 'History' }
+    { id: 0, icon: '🏠', label: 'Overview' },
+    { id: 1, icon: '📸', label: 'Facial Analysis' },
+    { id: 2, icon: '🎤', label: 'Speech Analysis' },
+    { id: 3, icon: '🎬', label: 'Multimodal Analysis' },
+    { id: 4, icon: '🧠', label: 'Model Information' },
+    { id: 5, icon: '🕓', label: 'History' }
   ];
+
+  const tabDescriptions = {
+    0: 'Monitor usage, engagement trends, and channel distribution at a glance.',
+    1: 'Upload or capture a face image and get explainable emotion predictions.',
+    2: 'Upload or record voice to detect emotion with confidence and saliency cues.',
+    3: 'Run combined face + voice analysis using separate inputs or a single video.',
+    4: 'Review model architecture, accuracy, and system capabilities.',
+    5: 'Track, annotate, pin, and export your analysis history.'
+  };
 
   // Load history from Supabase on mount
   useEffect(() => {
@@ -1525,6 +1962,16 @@ function DashboardConsole({ authUser, onLogout }) {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
+  const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label || 'Dashboard';
+  const activeDescription = tabDescriptions[activeTab] || '';
+  const todayRecords = history.filter((row) => row.createdAt.startsWith(dateValue)).length;
+  const profileInitials = (() => {
+    const base = authUser?.name || authUser?.email || 'User';
+    const pieces = String(base).trim().split(/\s+/).filter(Boolean);
+    if (pieces.length >= 2) return `${pieces[0][0]}${pieces[1][0]}`.toUpperCase();
+    return String(base).slice(0, 2).toUpperCase();
+  })();
+
   const exportHistoryCsv = () => {
     if (!filteredHistory.length) return;
     const header = ['Time', 'Modality', 'Result', 'Confidence', 'Explainability', 'Concordance', 'Note'];
@@ -1584,7 +2031,10 @@ function DashboardConsole({ authUser, onLogout }) {
   return (
     <div className="ga-layout">
       <aside className="ga-sidebar">
-        <div className="ga-brand">Emotion Analytics</div>
+        <div className="ga-brand-wrap">
+          <div className="ga-brand">Emotion Analytics</div>
+          <div className="ga-brand-subtitle">Multimodal Intelligence Console</div>
+        </div>
         <nav className="ga-nav">
           {tabs.map((tab) => (
             <button
@@ -1607,7 +2057,7 @@ function DashboardConsole({ authUser, onLogout }) {
         <header className="ga-header">
           <input
             className="ga-search"
-            placeholder="Search reports"
+            placeholder="Search emotions, notes, explainability..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -1615,13 +2065,20 @@ function DashboardConsole({ authUser, onLogout }) {
             <input type="date" className="ga-date" value={dateValue} onChange={(e) => setDateValue(e.target.value)} />
             <button className="ga-header-btn" onClick={exportHistoryCsv} disabled={!filteredHistory.length}>Export CSV</button>
             <button className="ga-header-btn" onClick={exportSummaryReport} disabled={!filteredHistory.length}>Summary Report</button>
-            <button className="ga-profile" title="Profile">NV</button>
+            <button className="ga-profile" title={authUser?.name || authUser?.email || 'Profile'}>{profileInitials}</button>
           </div>
         </header>
 
         <main className="ga-main">
           <div className="ga-page-title-row">
-            <h1 className="ga-page-title">{tabs.find((tab) => tab.id === activeTab)?.label}</h1>
+            <div>
+              <h1 className="ga-page-title">{activeTabLabel}</h1>
+              <p className="ga-page-subtitle">{activeDescription}</p>
+            </div>
+            <div className="ga-context-chips">
+              <span className="ga-chip">Today: {todayRecords} records</span>
+              <span className="ga-chip">Total: {history.length} records</span>
+            </div>
           </div>
 
           {activeTab === 0 && <OverviewTab />}
@@ -1629,7 +2086,12 @@ function DashboardConsole({ authUser, onLogout }) {
           {activeTab === 2 && <div className="ga-card"><SpeechTab onResult={addHistoryRecord} /></div>}
           {activeTab === 3 && <div className="ga-card"><CombinedTab onResult={addHistoryRecord} /></div>}
           {activeTab === 4 && <div className="ga-card"><ModelInfoTab /></div>}
-          {activeTab === 5 && (
+          {activeTab === 5 && isLoadingHistory && (
+            <div className="ga-card">
+              <p className="ga-empty">Loading your history...</p>
+            </div>
+          )}
+          {activeTab === 5 && !isLoadingHistory && (
             <HistoryTab
               history={filteredHistory}
               onTogglePin={togglePinHistory}

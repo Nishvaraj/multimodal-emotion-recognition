@@ -1,117 +1,72 @@
-# Multi-Modal Emotion Recognition with Concordance Analysis
+# Multi-Modal Emotion Recognition
 
-Real-time emotion recognition system combining facial expressions and speech analysis with a novel concordance metric for measuring emotional authenticity.
+Emotion analytics web app with facial, speech, and combined (image+audio or video) analysis.
 
-## Quick Start
+## Current Capabilities
 
-1. **Activate virtual environment**
+- Facial emotion prediction (upload + webcam capture)
+- Speech emotion prediction (upload + live mic recording)
+- Combined analysis:
+  - Separate image + audio mode
+  - Video upload/live recording mode
+- Explainability outputs (Grad-CAM and audio saliency when available)
+- Supabase auth (signup/login/logout/session)
+- Supabase-backed history with notes, pin/unpin, delete, CSV and summary export
 
-   ```bash
-   source venv/bin/activate  # Mac/Linux
-   # or
-   venv\Scripts\activate  # Windows
-   ```
+## Local Quick Start
 
-2. **Install dependencies**
+1. Activate Python environment
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+source .venv/bin/activate
+```
 
-3. **Download datasets**
+2. Install backend dependencies
 
-   ```bash
-   python scripts/download_datasets.py
-   ```
+```bash
+pip install -r requirements.txt
+```
 
-   Then manually download FER2013 and RAVDESS from Kaggle (see script output)
+3. Install frontend dependencies
 
-4. **Run backend**
+```bash
+cd frontend
+npm install
+cd ..
+```
 
-   ```bash
-   python backend/main.py
-   ```
+4. Run backend
 
-5. **Run frontend** (in separate terminal)
-   ```bash
-   cd frontend && npm start
-   ```
+```bash
+./.venv/bin/uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+5. Run frontend (new terminal)
+
+```bash
+cd frontend
+npm start
+```
+
+6. Open app
+
+- Frontend: http://localhost:3000
+- Backend health: http://127.0.0.1:8000/health
+
+## Environment
+
+- Frontend local env: `frontend/.env.local`
+- Example shared vars: `.env.example`
 
 ## Project Structure
 
-- `/frontend` - React UI for real-time emotion analysis
-- `/backend` - FastAPI server with emotion recognition APIs
-- `/src` - Core ML models and training code
-  - `/models` - Audio, video (facial), and fusion models
-  - `/data_loaders` - Dataset loading utilities
-  - `/preprocessing` - Audio and video preprocessing
-  - `/training` - Model training pipelines
-  - `/utils` - Metrics and utilities
-- `/models` - Pre-trained model checkpoints
-  - `/facial` - Facial emotion models (ViT, ResNet)
-  - `/speech` - Speech emotion models (HuBERT)
-  - `/fusion` - Multi-modal fusion models
-- `/data` - Training data (raw and processed)
-- `/notebooks` - Jupyter notebooks for EDA and experiments
-- `/tests` - Unit and integration tests
-- `/docs` - Project documentation
-- `/logs` - Training and application logs
+- `frontend/` React dashboard and auth flows
+- `backend/` FastAPI inference endpoints
+- `models/` trained checkpoints
+- `notebooks/` training and experiments
+- `configs/` project configuration files
 
-## Key Features
+## Notes
 
-- **Real-time Processing**: 30 FPS facial emotion recognition
-- **Multi-modal Fusion**: Combines facial + speech modalities
-- **Concordance Metric**: Novel measure of emotional authenticity
-- **Explainability**: Grad-CAM visualizations for transparency
-- **Privacy-First**: 100% local processing, zero cloud transmission
-
-## Technology Stack
-
-- **Backend**: FastAPI, Python 3.10+, PyTorch
-- **Frontend**: React 18, Socket.IO, Plotly.js
-- **ML Models**: Vision Transformer (ViT), HuBERT, ResNet-18
-- **Computer Vision**: OpenCV, MTCNN
-- **Audio**: Librosa, Soundfile
-
-## Development Setup
-
-See full setup guide in Phase 0 implementation documentation.
-
-```
-conda env create -f environment.yml
-```
-
-3. **Download Datasets**:
-   Run the following script to download the necessary datasets:
-
-   ```
-   bash scripts/download_datasets.sh
-   ```
-
-4. **Prepare Datasets**:
-   After downloading, prepare the datasets for training by running:
-
-   ```
-   python scripts/prepare_datasets.py
-   ```
-
-5. **Extract Features**:
-   Extract features from the raw data using:
-
-   ```
-   python scripts/extract_features.py
-   ```
-
-6. **Run the Application**:
-   Start the training or evaluation process by executing:
-   ```
-   python src/main.py
-   ```
-
-## Usage
-
-Follow the instructions in the `notebooks/EDA.ipynb` for exploratory data analysis and to understand the dataset better. Modify the configuration in `configs/config.yaml` as needed for your experiments.
-
-## License
-
-This project is licensed under the MIT License. See the LICENSE file for more details.
+- First backend startup may take longer due to model initialization.
+- Webcam/mic features require browser permissions.

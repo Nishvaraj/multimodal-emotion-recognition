@@ -4,7 +4,7 @@
     {
       "label": "pip install requirements",
       "type": "shell",
-      "command": "${workspaceFolder}/venv/bin/pip",
+      "command": "${workspaceFolder}/.venv/bin/pip",
       "args": ["install", "-r", "requirements.txt"],
       "presentation": {
         "reveal": "always",
@@ -15,7 +15,7 @@
     {
       "label": "Run Backend Server",
       "type": "shell",
-      "command": "${workspaceFolder}/venv/bin/uvicorn",
+      "command": "${workspaceFolder}/.venv/bin/uvicorn",
       "args": [
         "backend.main:app",
         "--reload",
@@ -45,7 +45,7 @@
     {
       "label": "Run Tests",
       "type": "shell",
-      "command": "${workspaceFolder}/venv/bin/pytest",
+      "command": "${workspaceFolder}/.venv/bin/pytest",
       "args": ["tests/", "-v", "--tb=short"],
       "presentation": {
         "reveal": "always",
@@ -55,14 +55,14 @@
     {
       "label": "Format Code (Black)",
       "type": "shell",
-      "command": "${workspaceFolder}/venv/bin/black",
-      "args": [".", "--exclude", "venv"]
+      "command": "${workspaceFolder}/.venv/bin/black",
+      "args": [".", "--exclude", ".venv"]
     },
     {
       "label": "Lint Code (Pylint)",
       "type": "shell",
-      "command": "${workspaceFolder}/venv/bin/pylint",
-      "args": ["backend/", "src/", "--disable=all", "--enable=E,F"],
+      "command": "${workspaceFolder}/.venv/bin/pylint",
+      "args": ["backend/", "--disable=all", "--enable=E,F"],
       "presentation": {
         "reveal": "always",
         "panel": "new"

@@ -30,7 +30,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Import explainability module
 from services.explainability import generate_grad_cam, generate_audio_saliency, create_combined_visualization
-from config import ENV, FRONTEND_URL, USE_GPU
+
+ENV = os.getenv("ENV", "development")
+FRONTEND_URL = os.getenv("REACT_APP_VERCEL_URL", "http://localhost:3000")
+USE_GPU = os.getenv("USE_GPU", "true").lower() == "true"
 
 app = FastAPI(title="Multi-Modal Emotion Recognition API", version="2.0.0")
 
@@ -68,6 +71,11 @@ speech_processor = None
 PROJECT_ROOT = Path(__file__).parent.parent
 FACIAL_MODEL_PATH = PROJECT_ROOT / 'models' / 'vit_emotion_model.pt'
 SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'hubert_emotion_model.pt'
+
+
+def _upload_suffix(filename: str, default_suffix: str) -> str:
+    suffix = Path(filename or '').suffix.lower()
+    return suffix if suffix else default_suffix
 
 logger.info(f"Device: {DEVICE}")
 logger.info(f"Project root: {PROJECT_ROOT}")
@@ -291,7 +299,8 @@ async def predict_speech(file: UploadFile = File(...), explain: bool = False):
     """Predict emotion from audio"""
     try:
         contents = await file.read()
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+        suffix = _upload_suffix(file.filename, '.wav')
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(contents)
             tmp_path = tmp.name
         
@@ -315,7 +324,8 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
         
         # Process audio
         audio_contents = await audio_file.read()
-        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+        audio_suffix = _upload_suffix(audio_file.filename, '.wav')
+        with tempfile.NamedTemporaryFile(suffix=audio_suffix, delete=False) as tmp:
             tmp.write(audio_contents)
             tmp_path = tmp.name
         
@@ -380,23 +390,26 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
             }
         }
         
-        # Add explainability if requested
+        # Add explainability if requested (allow partial outputs)
         if explain and facial_result and speech_result:
-            if "grad_cam" in facial_result and "saliency" in speech_result:
-                response["explainability"] = {
-                    "grad_cam": facial_result.get("grad_cam"),
-                    "saliency": speech_result.get("saliency")
-                }
+            explainability = {}
+            if facial_result.get("grad_cam"):
+                explainability["grad_cam"] = facial_result.get("grad_cam")
+            if speech_result.get("saliency"):
+                explainability["saliency"] = speech_result.get("saliency")
+            if explainability:
+                response["explainability"] = explainability
         
         return response
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 @app.post("/api/predict/video")
-async def predict_video_emotion(file: UploadFile = File(...)):
+async def predict_video_emotion(file: UploadFile = File(...), explain: bool = False):
     """Predict emotions from video (facial + speech)"""
     try:
-        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
+        video_suffix = _upload_suffix(file.filename, '.mp4')
+        with tempfile.NamedTemporaryFile(suffix=video_suffix, delete=False) as tmp:
             contents = await file.read()
             tmp.write(contents)
             tmp_path = tmp.name
@@ -429,7 +442,7 @@ async def predict_video_emotion(file: UploadFile = File(...)):
             # Predict speech emotion
             speech_result = predict_speech_emotion(audio, sr)
             
-            return {
+            response = {
                 "success": True,
                 "facial_emotion": {
                     "emotion": facial_emotion,
@@ -447,6 +460,39 @@ async def predict_video_emotion(file: UploadFile = File(...)):
                 "frames_processed": len(frames),
                 "fps": float(fps)
             }
+
+            if explain and frames and facial_emotion != "unknown" and speech_result:
+                try:
+                    # Use a representative frame (middle) and full audio for explainability.
+                    rep_frame = frames[len(frames) // 2]
+                    facial_idx = EMOTIONS_FACIAL.index(facial_emotion) if facial_emotion in EMOTIONS_FACIAL else 0
+                    speech_idx = EMOTIONS_SPEECH.index(speech_result["emotion"]) if speech_result and speech_result["emotion"] in EMOTIONS_SPEECH else 0
+
+                    _, grad_cam_base64 = generate_grad_cam(
+                        rep_frame,
+                        vit_model,
+                        facial_processor,
+                        facial_idx,
+                        EMOTIONS_FACIAL,
+                        DEVICE
+                    )
+                    _, saliency_base64 = generate_audio_saliency(
+                        audio,
+                        speech_model,
+                        speech_processor,
+                        speech_idx,
+                        EMOTIONS_SPEECH,
+                        DEVICE,
+                        sr=16000
+                    )
+                    response["explainability"] = {
+                        "grad_cam": grad_cam_base64,
+                        "saliency": saliency_base64
+                    }
+                except Exception as e:
+                    logger.warning(f"Could not generate video explainability: {e}")
+
+            return response
         finally:
             os.unlink(tmp_path)
     except Exception as e:
