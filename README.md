@@ -1,17 +1,33 @@
 # Multi-Modal Emotion Recognition
 
-Emotion analytics web app with facial, speech, and combined (image+audio or video) analysis.
+Emotion analytics platform combining facial and speech emotion recognition with multimodal concordance analysis, explainability outputs, authentication, and user history tracking.
 
-## Current Capabilities
+## Implemented Capabilities
 
-- Facial emotion prediction (upload + webcam capture)
-- Speech emotion prediction (upload + live mic recording)
-- Combined analysis:
+### 1. Inference Modes
+- Facial emotion prediction (upload + webcam)
+- Speech emotion prediction (upload + live microphone)
+- Combined multimodal prediction:
   - Separate image + audio mode
-  - Video upload/live recording mode
-- Explainability outputs (Grad-CAM and audio saliency when available)
-- Supabase auth (signup/login/logout/session)
-- Supabase-backed history with notes, pin/unpin, delete, CSV and summary export
+  - Video mode (upload or live recording)
+
+### 2. Explainability
+- Facial Grad-CAM heatmaps
+- Audio saliency visualization
+- Explainability status reporting when generation is partial or unavailable
+
+### 3. User System
+- Supabase authentication (signup/login/logout/session)
+- Per-user analysis history with notes, pin/unpin, and delete
+- Export tools:
+  - CSV history export
+  - Text summary report export
+
+### 4. Backend API
+- Root and health endpoints
+- Facial, speech, combined, and video prediction endpoints
+- Emotion list endpoints
+- Model status endpoint
 
 ## Local Quick Start
 
@@ -53,20 +69,32 @@ npm start
 - Frontend: http://localhost:3000
 - Backend health: http://127.0.0.1:8000/health
 
-## Environment
+## Environment Variables
 
-- Frontend local env: `frontend/.env.local`
-- Example shared vars: `.env.example`
+### Frontend
+- REACT_APP_API_BASE
+- REACT_APP_SUPABASE_URL
+- REACT_APP_SUPABASE_ANON_KEY
+
+### Backend
+- ENV
+- USE_GPU
+- REACT_APP_VERCEL_URL
 
 ## Project Structure
 
-- `frontend/` React dashboard and auth flows
-- `backend/` FastAPI inference endpoints
-- `models/` trained checkpoints
-- `notebooks/` training and experiments
-- `configs/` project configuration files
+- `frontend/`: React app (auth, dashboard, analysis tabs, history, exports)
+- `backend/`: FastAPI inference and explainability services
+- `models/`: trained checkpoints
+- `notebooks/`: training and experimentation notebooks
+- `configs/`: configuration files
+
+## Current Limitations
+
+- Facial model accuracy is still below the target in project planning and remains an active improvement area.
+- Explainability quality can vary with low-quality/noisy inputs.
 
 ## Notes
 
 - First backend startup may take longer due to model initialization.
-- Webcam/mic features require browser permissions.
+- Webcam/microphone features require browser permissions.
