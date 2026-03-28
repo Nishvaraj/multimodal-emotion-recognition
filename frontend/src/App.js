@@ -1,8 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { jsPDF } from 'jspdf';
 import { supabase } from './supabaseClient';
 import { saveAnalysisToSupabase, loadAnalysisHistoryFromSupabase, updateAnalysisNote, toggleAnalysisPin, deleteAnalysisRecord } from './supabaseHistoryService';
+import logoImage from './assets/logo.png';
 
 const EMOTION_EMOJIS = {
   'angry': 'AN',
@@ -20,6 +22,110 @@ const EMOTION_EMOJIS = {
 const EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
 const EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised'];
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000';
+
+const CONCORDANCE_SCORE_MAP = {
+  MATCH: 100,
+  PARTIAL: 65,
+  MISMATCH: 30
+};
+
+function parseRecordTimestamp(row) {
+  const time = new Date(row?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function getConcordanceScore(row) {
+  if (row?.concordance && CONCORDANCE_SCORE_MAP[row.concordance]) {
+    return CONCORDANCE_SCORE_MAP[row.concordance];
+  }
+  const confidence = Number(row?.confidence || 0);
+  return Math.max(0, Math.min(100, confidence * 100));
+}
+
+function splitMultimodalEmotions(row) {
+  if (!row?.emotion || !String(row.emotion).includes('|')) return null;
+  const [facial, speech] = String(row.emotion).split('|').map((item) => item.trim().toLowerCase());
+  if (!facial || !speech) return null;
+  return { facial, speech };
+}
+
+function formatPercent(value) {
+  if (!Number.isFinite(value)) return '0%';
+  return `${Math.round(value)}%`;
+}
+
+function formatDayMonth(dateObj) {
+  return dateObj.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+}
+
+function getSessionDatesSet(history) {
+  const set = new Set();
+  history.forEach((row) => {
+    const d = new Date(parseRecordTimestamp(row));
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    set.add(key);
+  });
+  return set;
+}
+
+function buildHeatmapData(history) {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const start = new Date(now);
+  start.setDate(now.getDate() - 83);
+
+  const countsByDate = new Map();
+  history.forEach((row) => {
+    const d = new Date(parseRecordTimestamp(row));
+    d.setHours(0, 0, 0, 0);
+    if (d < start || d > now) return;
+    const key = d.toISOString().slice(0, 10);
+    countsByDate.set(key, (countsByDate.get(key) || 0) + 1);
+  });
+
+  const cells = Array.from({ length: 7 }, () => Array(12).fill(0));
+  let maxCount = 0;
+
+  for (let dayOffset = 0; dayOffset < 84; dayOffset += 1) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + dayOffset);
+    const key = d.toISOString().slice(0, 10);
+    const count = countsByDate.get(key) || 0;
+    const weekIndex = Math.floor(dayOffset / 7);
+    const dayIndex = (d.getDay() + 6) % 7;
+    cells[dayIndex][weekIndex] = count;
+    if (count > maxCount) maxCount = count;
+  }
+
+  const toLevel = (count) => {
+    if (!count || maxCount === 0) return 0;
+    const ratio = count / maxCount;
+    if (ratio < 0.25) return 1;
+    if (ratio < 0.5) return 2;
+    if (ratio < 0.75) return 3;
+    return 4;
+  };
+
+  return cells.map((row) => row.map((count) => ({ count, level: toLevel(count) })));
+}
+
+function buildTrendSeries(history) {
+  const now = new Date();
+  const points = Array.from({ length: 12 }, (_, i) => {
+    const end = new Date(now);
+    end.setDate(now.getDate() - ((11 - i) * 7));
+    const start = new Date(end);
+    start.setDate(end.getDate() - 6);
+    const weekRows = history.filter((row) => {
+      const t = parseRecordTimestamp(row);
+      return t >= start.getTime() && t <= end.getTime();
+    });
+    if (!weekRows.length) return 0;
+    const avg = weekRows.reduce((sum, row) => sum + getConcordanceScore(row), 0) / weekRows.length;
+    return Math.round(avg);
+  });
+  return points;
+}
 
 // ============== FACIAL EMOTION TAB ==============
 function FacialTab({ onResult }) {
@@ -1715,7 +1821,10 @@ function MarketingPage() {
   return (
     <div className="mmer-marketing">
       <header className="mmer-top-nav">
-        <div className="mmer-logo">MMER Platform</div>
+        <div className="mmer-logo-wrap">
+          <img src={logoImage} alt="MMER logo" className="mmer-logo-mark" />
+          <div className="mmer-logo">MMER Platform</div>
+        </div>
         <div className="mmer-nav-actions">
           <button className="mmer-link-btn" onClick={() => navigate('/login')}>Login</button>
           <button className="mmer-primary-btn" onClick={() => navigate('/signup')}>Get Started</button>
@@ -1811,131 +1920,321 @@ function MarketingPage() {
   );
 }
 
-function KpiCard({ icon, title, value, change, positive = true }) {
+function DashboardIcon({ name, className = '' }) {
+  const iconClass = `ga-glyph ${className}`.trim();
+  switch (name) {
+    case 'overview':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <path d="M3 12l9-8 9 8" />
+          <path d="M6 10v10h12V10" />
+        </svg>
+      );
+    case 'facial':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="3" />
+          <circle cx="12" cy="12" r="3.5" />
+          <path d="M7.5 9.5h.01M16.5 9.5h.01" />
+        </svg>
+      );
+    case 'speech':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <rect x="9" y="3" width="6" height="11" rx="3" />
+          <path d="M5 11a7 7 0 0014 0" />
+          <path d="M12 18v3" />
+          <path d="M8.5 21h7" />
+        </svg>
+      );
+    case 'multimodal':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <rect x="4" y="4" width="7" height="7" rx="2" />
+          <rect x="13" y="4" width="7" height="7" rx="2" />
+          <rect x="4" y="13" width="7" height="7" rx="2" />
+          <path d="M14 14h6" />
+          <path d="M17 11v6" />
+        </svg>
+      );
+    case 'model':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <rect x="7" y="7" width="10" height="10" rx="2" />
+          <path d="M12 1v4M12 19v4M1 12h4M19 12h4M4.5 4.5l2.8 2.8M16.7 16.7l2.8 2.8M19.5 4.5l-2.8 2.8M7.3 16.7l-2.8 2.8" />
+        </svg>
+      );
+    case 'history':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <path d="M3 12a9 9 0 109-9" />
+          <path d="M3 4v8h8" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      );
+    case 'users':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <circle cx="9" cy="8" r="3" />
+          <path d="M3.5 18a5.5 5.5 0 0111 0" />
+          <circle cx="17" cy="9" r="2" />
+          <path d="M15 18a4 4 0 014 0" />
+        </svg>
+      );
+    case 'sessions':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M3 10h18" />
+          <path d="M8 15h3M13 15h3" />
+        </svg>
+      );
+    case 'conversion':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <path d="M4 6h16" />
+          <path d="M7 6v12h10V6" />
+          <path d="M9 10l2.5 2.5L15 9" />
+        </svg>
+      );
+    case 'bounce':
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <path d="M5 6h14" />
+          <path d="M7 6v12h10" />
+          <path d="M11 13l-3 3 3 3" />
+          <path d="M8 16h8" />
+        </svg>
+      );
+    default:
+      return (
+        <svg viewBox="0 0 24 24" className={iconClass} aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+        </svg>
+      );
+  }
+}
+
+function KpiCard({ title, value, detail, detailClass = '' }) {
   return (
-    <div className="ga-kpi-card">
-      <div className="ga-kpi-head">
-        <span className="ga-kpi-icon">{icon}</span>
-        <span className="ga-kpi-title">{title}</span>
-      </div>
+    <article className="ga-kpi-card ga-kpi-summary-card">
+      <div className="ga-kpi-title">{title}</div>
       <div className="ga-kpi-value">{value}</div>
-      <div className={`ga-kpi-change ${positive ? 'up' : 'down'}`}>{change}</div>
-    </div>
+      <div className={`ga-kpi-detail ${detailClass}`}>{detail}</div>
+    </article>
   );
 }
 
-function TrendLineChart() {
-  const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const values = [420, 510, 470, 560, 590, 615, 650];
-  const width = 640;
-  const height = 220;
-  const pad = 24;
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const xStep = (width - pad * 2) / (values.length - 1);
-  const y = (v) => pad + ((max - v) / (max - min || 1)) * (height - pad * 2);
-  const path = values
-    .map((v, i) => `${i === 0 ? 'M' : 'L'} ${pad + i * xStep} ${y(v)}`)
-    .join(' ');
-
+function ActivityHeatmapCard({ heatmapData }) {
   return (
-    <div className="ga-card ga-chart-card">
-      <div className="ga-section-title">Engagement Trend</div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="ga-chart" role="img" aria-label="Engagement trend line chart">
-        {[0, 1, 2, 3, 4].map((line) => {
-          const yPos = pad + ((height - pad * 2) / 4) * line;
-          return <line key={line} x1={pad} y1={yPos} x2={width - pad} y2={yPos} className="ga-gridline" />;
-        })}
-        <path d={path} className="ga-line" />
-        {values.map((v, i) => (
-          <circle key={labels[i]} cx={pad + i * xStep} cy={y(v)} r="3.5" className="ga-point">
-            <title>{`${labels[i]}: ${v}`}</title>
-          </circle>
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-function ChannelBarChart() {
-  const data = [
-    { name: 'Organic Search', value: 34 },
-    { name: 'Direct', value: 26 },
-    { name: 'Referral', value: 18 },
-    { name: 'Social', value: 14 },
-    { name: 'Email', value: 8 }
-  ];
-
-  return (
-    <div className="ga-card ga-chart-card">
-      <div className="ga-section-title">Traffic Channels</div>
-      <div className="ga-bars">
-        {data.map((item) => (
-          <div key={item.name} className="ga-bar-row" title={`${item.name}: ${item.value}%`}>
-            <div className="ga-bar-label">{item.name}</div>
-            <div className="ga-bar-track">
-              <div className="ga-bar-fill" style={{ width: `${item.value}%` }} />
-            </div>
-            <div className="ga-bar-value">{item.value}%</div>
-          </div>
-        ))}
+    <article className="ga-card ga-heatmap-card">
+      <h3 className="ga-section-title ga-heatmap-title">Activity Heatmap · Last 12 Weeks</h3>
+      <div className="ga-heatmap-grid" role="img" aria-label="Activity heatmap for the last 12 weeks">
+        {heatmapData.flatMap((row, rowIdx) =>
+          row.map((cell, colIdx) => (
+            <span
+              key={`${rowIdx}-${colIdx}`}
+              className={`ga-heat-cell level-${cell.level}`}
+              title={`Week ${colIdx + 1}, day ${rowIdx + 1}: ${cell.count} session${cell.count === 1 ? '' : 's'}`}
+            />
+          ))
+        )}
       </div>
-    </div>
+      <div className="ga-heatmap-scale">
+        <span>12 weeks ago</span>
+        <span>This week</span>
+      </div>
+    </article>
   );
 }
 
-function OverviewTable() {
-  const rows = [
-    { page: '/dashboard', users: 1824, engagement: '72.1%', avgTime: '03:12' },
-    { page: '/facial-analysis', users: 1432, engagement: '69.4%', avgTime: '02:48' },
-    { page: '/speech-analysis', users: 1265, engagement: '66.2%', avgTime: '02:31' },
-    { page: '/combined-analysis', users: 985, engagement: '74.0%', avgTime: '03:46' }
-  ];
-
+function InsightCard({ icon, title, description }) {
   return (
-    <div className="ga-card">
-      <div className="ga-section-title">Top Pages</div>
-      <table className="ga-table">
-        <thead>
-          <tr>
-            <th>Page</th>
-            <th>Users</th>
-            <th>Engagement</th>
-            <th>Avg. Time</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.page}>
-              <td>{row.page}</td>
-              <td>{row.users.toLocaleString()}</td>
-              <td>{row.engagement}</td>
-              <td>{row.avgTime}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <article className="ga-card ga-insight-card">
+      <div className="ga-insight-icon">{icon}</div>
+      <h4 className="ga-insight-title">{title}</h4>
+      <p className="ga-insight-text">{description}</p>
+    </article>
   );
 }
 
-function OverviewTab() {
+function OverviewTab({ history, analytics }) {
+  const {
+    totalSessions,
+    monthDelta,
+    avgConcordance,
+    weeklyConcordanceDelta,
+    bestSessionScore,
+    bestSessionDate,
+    streakDays,
+    heatmapData,
+    bestEmotionInsight,
+    worstEmotionInsight
+  } = analytics;
+
+  const weekDeltaText = `${weeklyConcordanceDelta >= 0 ? '↑' : '↓'} ${Math.abs(weeklyConcordanceDelta)}% ${weeklyConcordanceDelta >= 0 ? 'improving' : 'declining'}`;
+
   return (
     <>
-      <section className="ga-kpi-grid">
-        <KpiCard icon="US" title="Active Users" value="12,480" change="+8.2% vs last period" />
-        <KpiCard icon="SE" title="Sessions" value="21,934" change="+5.4% vs last period" />
-        <KpiCard icon="CV" title="Conversion Rate" value="4.32%" change="+0.7% vs last period" />
-        <KpiCard icon="BO" title="Bounce Rate" value="31.8%" change="-1.2% vs last period" positive={false} />
+      <section className="ga-kpi-grid ga-kpi-summary-grid">
+        <KpiCard
+          title="Total Sessions"
+          value={String(totalSessions)}
+          detail={`${monthDelta >= 0 ? '↑' : '↓'} ${Math.abs(monthDelta)}% this month`}
+          detailClass={monthDelta >= 0 ? 'up' : ''}
+        />
+        <KpiCard title="Avg Concordance" value={formatPercent(avgConcordance)} detail={weekDeltaText} detailClass={weeklyConcordanceDelta >= 0 ? 'up' : ''} />
+        <KpiCard title="Best Session" value={formatPercent(bestSessionScore)} detail={`Match · ${bestSessionDate || '-'}`} />
+        <KpiCard title="Streak" value={String(streakDays)} detail="days in a row" />
       </section>
 
-      <section className="ga-chart-grid">
-        <TrendLineChart />
-        <ChannelBarChart />
-      </section>
+      <ActivityHeatmapCard heatmapData={heatmapData} />
 
-      <OverviewTable />
+      <section className="ga-insights-grid">
+        <InsightCard
+          icon="↗"
+          title="Concordance improving"
+          description={`Your average score ${weeklyConcordanceDelta >= 0 ? 'rose' : 'dropped'} ${Math.abs(weeklyConcordanceDelta)}% this week. ${history.length ? 'Keep practising daily sessions.' : 'Run a few sessions to unlock trend insights.'}`}
+        />
+        <InsightCard
+          icon="◎"
+          title={`${bestEmotionInsight.emotion} most consistent`}
+          description={`${bestEmotionInsight.emotion} has the highest facial-speech alignment at ${bestEmotionInsight.rate}% average match rate.`}
+        />
+        <InsightCard
+          icon="⚑"
+          title={`${worstEmotionInsight.emotion} needs attention`}
+          description={`${worstEmotionInsight.emotion} shows lowest concordance (${worstEmotionInsight.rate}%). Your face and voice diverge on this emotion.`}
+        />
+      </section>
     </>
+  );
+}
+
+function EmotionTrendsTab({ analytics }) {
+  const trendPoints = analytics.weeklyTrend;
+  const xStep = 500 / Math.max(1, trendPoints.length - 1);
+  const pointString = trendPoints
+    .map((score, i) => {
+      const x = i * xStep;
+      const y = 100 - score;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  const areaString = `${pointString} 500,100 0,100`;
+
+  return (
+    <div className="ga-design-stack">
+      <div className="ga-card">
+        <div className="ga-section-title">Concordance score over time</div>
+        <div className="ga-mini-chart-wrap">
+          <svg viewBox="0 0 500 100" className="ga-mini-chart" preserveAspectRatio="none" role="img" aria-label="Concordance trend over last 30 days">
+            <polyline points={pointString} className="ga-mini-line" />
+            <polyline points={areaString} className="ga-mini-area" />
+            <line x1="0" y1="40" x2="500" y2="40" className="ga-mini-target" />
+          </svg>
+        </div>
+      </div>
+      <div className="ga-design-two-col">
+        <div className="ga-card">
+          <div className="ga-section-title">Emotion Frequency</div>
+          <div className="ga-bars">
+            {analytics.emotionFrequency.map(([name, value]) => (
+              <div key={name} className="ga-bar-row">
+                <div className="ga-bar-label">{name}</div>
+                <div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${value}%` }} /></div>
+                <div className="ga-bar-value">{value}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="ga-card">
+          <div className="ga-section-title">Per-emotion concordance avg</div>
+          <div className="ga-bars">
+            {analytics.emotionConcordance.map(([name, value]) => (
+              <div key={name} className="ga-bar-row">
+                <div className="ga-bar-label">{name}</div>
+                <div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${value}%` }} /></div>
+                <div className="ga-bar-value">{value}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AIFeedbackTab({ analytics }) {
+  const cards = analytics.feedbackCards;
+  return (
+    <div className="ga-design-stack">
+      {cards.map((card) => (
+        <div key={card.title} className={`ga-feedback-card ${card.cls}`}>
+          <div className="ga-feedback-title">{card.title}</div>
+          <div className="ga-feedback-text">{card.text}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CompareSessionsTab({ analytics }) {
+  const [sessionA, sessionB] = analytics.latestComparableSessions;
+
+  if (!sessionA || !sessionB) {
+    return (
+      <div className="ga-card">
+        <p className="ga-empty">Need at least two multimodal sessions to compare. Run more combined analyses.</p>
+      </div>
+    );
+  }
+
+  const scoreDiff = Math.round(getConcordanceScore(sessionA) - getConcordanceScore(sessionB));
+
+  return (
+    <div className="ga-design-stack">
+      <div className="ga-design-two-col">
+        <div className="ga-card">
+          <div className="ga-section-title">Session A · {formatDayMonth(new Date(parseRecordTimestamp(sessionA)))}</div>
+          <div className="ga-compare-score good">{formatPercent(getConcordanceScore(sessionA))}</div>
+          <div className="ga-compare-note">{sessionA.concordance || 'Session'}</div>
+        </div>
+        <div className="ga-card">
+          <div className="ga-section-title">Session B · {formatDayMonth(new Date(parseRecordTimestamp(sessionB)))}</div>
+          <div className="ga-compare-score bad">{formatPercent(getConcordanceScore(sessionB))}</div>
+          <div className="ga-compare-note">{sessionB.concordance || 'Session'}</div>
+        </div>
+      </div>
+      <div className="ga-card">
+        <div className="ga-section-title">What Changed</div>
+        <div className="ga-bars">
+          <div className="ga-bar-row"><div className="ga-bar-label">Session A confidence</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${Math.round((sessionA.confidence || 0) * 100)}%` }} /></div><div className="ga-bar-value">{formatPercent((sessionA.confidence || 0) * 100)}</div></div>
+          <div className="ga-bar-row"><div className="ga-bar-label">Session B confidence</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${Math.round((sessionB.confidence || 0) * 100)}%` }} /></div><div className="ga-bar-value">{formatPercent((sessionB.confidence || 0) * 100)}</div></div>
+          <div className="ga-bar-row"><div className="ga-bar-label">Concordance delta</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${Math.min(100, Math.abs(scoreDiff))}%` }} /></div><div className="ga-bar-value">{scoreDiff >= 0 ? '+' : ''}{scoreDiff}%</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExportReportTab({ onExportCsv, onExportSummary, analytics }) {
+  return (
+    <div className="ga-design-stack">
+      <div className="ga-card">
+        <div className="ga-section-title">Summary · {new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</div>
+        <div className="ga-report-grid">
+          <div>Total sessions <strong>{analytics.totalSessions}</strong></div>
+          <div>Average concordance <strong>{formatPercent(analytics.avgConcordance)}</strong></div>
+          <div>Match sessions <strong>{analytics.matchCount}</strong></div>
+          <div>Mismatch sessions <strong>{analytics.mismatchCount}</strong></div>
+        </div>
+      </div>
+      <div className="ga-report-actions">
+        <button className="ga-header-btn" onClick={onExportSummary}>Download PDF Report</button>
+        <button className="ga-header-btn" onClick={onExportCsv}>Export CSV</button>
+      </div>
+    </div>
   );
 }
 
@@ -1995,31 +2294,57 @@ function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
   );
 }
 
-const HISTORY_STORAGE_KEY = 'mmer_analysis_history';
+const THEME_STORAGE_KEY = 'mmer_theme';
 
 function DashboardConsole({ authUser, onLogout }) {
   const [activeTab, setActiveTab] = useState(0);
   const [search, setSearch] = useState('');
-  const [dateValue, setDateValue] = useState(new Date().toISOString().slice(0, 10));
+  const [dateValue, setDateValue] = useState('');
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const logoDataUrlRef = useRef(null);
+  const [theme, setTheme] = useState(() => {
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'dark' || saved === 'light') {
+      return saved;
+    }
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+      return 'light';
+    }
+    return 'dark';
+  });
 
   const tabs = [
-    { id: 0, icon: '🏠', label: 'Overview' },
-    { id: 1, icon: '📸', label: 'Facial Analysis' },
-    { id: 2, icon: '🎤', label: 'Speech Analysis' },
-    { id: 3, icon: '🎬', label: 'Multimodal Analysis' },
-    { id: 4, icon: '🧠', label: 'Model Information' },
-    { id: 5, icon: '🕓', label: 'History' }
+    { id: 0, icon: 'overview', label: 'Dashboard' },
+    { id: 1, icon: 'facial', label: 'Facial Upload' },
+    { id: 2, icon: 'speech', label: 'Speech Upload' },
+    { id: 3, icon: 'multimodal', label: 'Combined' },
+    { id: 6, icon: 'overview', label: 'Emotion Trends' },
+    { id: 7, icon: 'model', label: 'AI Feedback' },
+    { id: 8, icon: 'multimodal', label: 'Compare Sessions' },
+    { id: 5, icon: 'history', label: 'Session History' },
+    { id: 9, icon: 'history', label: 'Export Report' },
+    { id: 4, icon: 'model', label: 'Model Info' }
+  ];
+
+  const navSections = [
+    { label: 'Overview', tabIds: [0] },
+    { label: 'Analysis', tabIds: [1, 2, 3] },
+    { label: 'Insights', tabIds: [6, 7, 8] },
+    { label: 'Records', tabIds: [5, 9, 4] }
   ];
 
   const tabDescriptions = {
-    0: 'Monitor usage, engagement trends, and channel distribution at a glance.',
+    0: 'Overview and key session metrics.',
     1: 'Upload or capture a face image and get explainable emotion predictions.',
     2: 'Upload or record voice to detect emotion with confidence and saliency cues.',
     3: 'Run combined face + voice analysis using separate inputs or a single video.',
-    4: 'Review model architecture, accuracy, and system capabilities.',
-    5: 'Track, annotate, pin, and export your analysis history.'
+    6: 'View emotion trend summaries across recent sessions.',
+    7: 'Get AI-generated feedback and actionable tips.',
+    8: 'Compare session-level changes and differences.',
+    5: 'Track, annotate, pin, and export your analysis history.',
+    9: 'Generate and export report summaries.',
+    4: 'Review model architecture, accuracy, and system capabilities.'
   };
 
   // Load history from Supabase on mount
@@ -2040,6 +2365,11 @@ function DashboardConsole({ authUser, onLogout }) {
     loadHistory();
   }, []);
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
   const addHistoryRecord = async (record) => {
     // Save to Supabase
     const saved = await saveAnalysisToSupabase(record);
@@ -2053,28 +2383,31 @@ function DashboardConsole({ authUser, onLogout }) {
   const togglePinHistory = async (id) => {
     const record = history.find((item) => item.id === id);
     if (record) {
-      await toggleAnalysisPin(id, record.pinned);
-      // Reload from Supabase
+      const toggled = await toggleAnalysisPin(id, record.pinned);
+      if (toggled) {
+        const updated = await loadAnalysisHistoryFromSupabase();
+        setHistory(updated);
+      }
+    }
+  };
+
+  const deleteHistory = async (id) => {
+    const deleted = await deleteAnalysisRecord(id);
+    if (deleted) {
       const updated = await loadAnalysisHistoryFromSupabase();
       setHistory(updated);
     }
   };
 
-  const deleteHistory = async (id) => {
-    await deleteAnalysisRecord(id);
-    // Reload from Supabase
-    const updated = await loadAnalysisHistoryFromSupabase();
-    setHistory(updated);
-  };
-
   const updateHistoryNote = async (id, note) => {
-    await updateAnalysisNote(id, note);
-    // Update local state immediately for UX
-    setHistory((prev) => prev.map((item) => (item.id === id ? { ...item, note } : item)));
+    const updated = await updateAnalysisNote(id, note);
+    if (updated) {
+      setHistory((prev) => prev.map((item) => (item.id === id ? { ...item, note } : item)));
+    }
   };
 
   const filteredHistory = history
-    .filter((row) => row.createdAt.startsWith(dateValue))
+    .filter((row) => (dateValue ? row.createdAt.startsWith(dateValue) : true))
     .filter((row) => {
       const q = search.trim().toLowerCase();
       if (!q) return true;
@@ -2090,7 +2423,8 @@ function DashboardConsole({ authUser, onLogout }) {
 
   const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label || 'Dashboard';
   const activeDescription = tabDescriptions[activeTab] || '';
-  const todayRecords = history.filter((row) => row.createdAt.startsWith(dateValue)).length;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayRecords = history.filter((row) => row.createdAt.startsWith(todayKey)).length;
   const profileInitials = (() => {
     const base = authUser?.name || authUser?.email || 'User';
     const pieces = String(base).trim().split(/\s+/).filter(Boolean);
@@ -2117,101 +2451,306 @@ function DashboardConsole({ authUser, onLogout }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mmer-history-${dateValue}.csv`;
+    a.download = `mmer-history-${dateValue || 'all'}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const exportSummaryReport = () => {
+  const ensureLogoDataUrl = async () => {
+    if (logoDataUrlRef.current) return logoDataUrlRef.current;
+    const response = await fetch(logoImage);
+    const blob = await response.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    logoDataUrlRef.current = dataUrl;
+    return dataUrl;
+  };
+
+  const exportSummaryReport = async () => {
     if (!filteredHistory.length) return;
     const byModality = filteredHistory.reduce((acc, cur) => {
       acc[cur.modality] = (acc[cur.modality] || 0) + 1;
       return acc;
     }, {});
-    const reportLines = [
-      'MMER User Summary Report',
-      `Date: ${dateValue}`,
-      `Total records: ${filteredHistory.length}`,
-      '',
-      'By modality:'
-    ];
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+
+    try {
+      const logoDataUrl = await ensureLogoDataUrl();
+      doc.addImage(logoDataUrl, 'PNG', 40, 34, 48, 48);
+    } catch (err) {
+      // Continue PDF generation even if logo embedding fails.
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('MMER User Summary Report', 100, 58);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.text(`User: ${authUser?.email || 'N/A'}`, 40, 104);
+    doc.text(`Range: ${dateValue || 'All records'}`, 40, 122);
+    doc.text(`Total records: ${filteredHistory.length}`, 40, 140);
+
+    let y = 170;
+    doc.setFont('helvetica', 'bold');
+    doc.text('By Modality', 40, y);
+    y += 18;
+
+    doc.setFont('helvetica', 'normal');
     Object.entries(byModality).forEach(([key, value]) => {
-      reportLines.push(`- ${key}: ${value}`);
-    });
-    reportLines.push('', 'Latest entries:');
-    filteredHistory.slice(0, 10).forEach((row, idx) => {
-      reportLines.push(
-        `${idx + 1}. ${new Date(row.createdAt).toLocaleString()} | ${row.modality} | ${row.emotion} | ${((row.confidence || 0) * 100).toFixed(1)}%`
-      );
+      doc.text(`- ${key}: ${value}`, 52, y);
+      y += 16;
     });
 
-    const blob = new Blob([reportLines.join('\n')], { type: 'text/plain;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mmer-summary-${dateValue}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    y += 10;
+    doc.setFont('helvetica', 'bold');
+    doc.text('Latest Entries', 40, y);
+    y += 18;
+    doc.setFont('helvetica', 'normal');
+
+    filteredHistory.slice(0, 20).forEach((row, idx) => {
+      const line = `${idx + 1}. ${new Date(row.createdAt).toLocaleString()} | ${row.modality} | ${row.emotion} | ${((row.confidence || 0) * 100).toFixed(1)}%`;
+      const wrapped = doc.splitTextToSize(line, 510);
+      if (y > 780) {
+        doc.addPage();
+        y = 50;
+      }
+      doc.text(wrapped, 40, y);
+      y += 16 * wrapped.length;
+    });
+
+    doc.save(`mmer-summary-${dateValue || 'all'}.pdf`);
   };
+
+  const analytics = useMemo(() => {
+    const safeHistory = [...history].sort((a, b) => parseRecordTimestamp(a) - parseRecordTimestamp(b));
+    const totalSessions = safeHistory.length;
+
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const prevMonthDate = new Date(currentYear, currentMonth - 1, 1);
+    const prevMonth = prevMonthDate.getMonth();
+    const prevYear = prevMonthDate.getFullYear();
+
+    const currentMonthRows = safeHistory.filter((row) => {
+      const d = new Date(parseRecordTimestamp(row));
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    });
+    const prevMonthRows = safeHistory.filter((row) => {
+      const d = new Date(parseRecordTimestamp(row));
+      return d.getMonth() === prevMonth && d.getFullYear() === prevYear;
+    });
+    const monthDelta = prevMonthRows.length > 0
+      ? Math.round(((currentMonthRows.length - prevMonthRows.length) / prevMonthRows.length) * 100)
+      : (currentMonthRows.length > 0 ? 100 : 0);
+
+    const avgConcordance = safeHistory.length
+      ? safeHistory.reduce((sum, row) => sum + getConcordanceScore(row), 0) / safeHistory.length
+      : 0;
+
+    const nowTs = Date.now();
+    const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+    const thisWeek = safeHistory.filter((row) => parseRecordTimestamp(row) >= nowTs - oneWeekMs);
+    const prevWeek = safeHistory.filter((row) => {
+      const t = parseRecordTimestamp(row);
+      return t >= nowTs - (2 * oneWeekMs) && t < nowTs - oneWeekMs;
+    });
+    const thisWeekAvg = thisWeek.length ? thisWeek.reduce((s, r) => s + getConcordanceScore(r), 0) / thisWeek.length : 0;
+    const prevWeekAvg = prevWeek.length ? prevWeek.reduce((s, r) => s + getConcordanceScore(r), 0) / prevWeek.length : 0;
+    const weeklyConcordanceDelta = Math.round(thisWeekAvg - prevWeekAvg);
+
+    const bestRow = safeHistory.reduce((best, row) => {
+      if (!best) return row;
+      return getConcordanceScore(row) > getConcordanceScore(best) ? row : best;
+    }, null);
+
+    const bestSessionScore = bestRow ? getConcordanceScore(bestRow) : 0;
+    const bestSessionDate = bestRow ? formatDayMonth(new Date(parseRecordTimestamp(bestRow))) : null;
+
+    const sessionDates = Array.from(getSessionDatesSet(safeHistory)).sort((a, b) => (a < b ? 1 : -1));
+    let streakDays = 0;
+    if (sessionDates.length) {
+      let cursor = new Date();
+      cursor.setHours(0, 0, 0, 0);
+      for (let i = 0; i < sessionDates.length + 1; i += 1) {
+        const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+        if (sessionDates.includes(key)) {
+          streakDays += 1;
+          cursor.setDate(cursor.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+
+    const multimodalRows = safeHistory.filter((row) => row.modality === 'multimodal' && splitMultimodalEmotions(row));
+    const emotionCounts = {};
+    const emotionConcordance = {};
+    multimodalRows.forEach((row) => {
+      const pair = splitMultimodalEmotions(row);
+      if (!pair) return;
+      [pair.facial, pair.speech].forEach((emotion) => {
+        emotionCounts[emotion] = (emotionCounts[emotion] || 0) + 1;
+      });
+      const score = getConcordanceScore(row);
+      emotionConcordance[pair.facial] = emotionConcordance[pair.facial] || { sum: 0, count: 0 };
+      emotionConcordance[pair.facial].sum += score;
+      emotionConcordance[pair.facial].count += 1;
+    });
+
+    const frequencyPairs = Object.entries(emotionCounts)
+      .map(([emotion, count]) => [emotion, Math.round((count / Math.max(1, Object.values(emotionCounts).reduce((a, b) => a + b, 0))) * 100)])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    const concordancePairs = Object.entries(emotionConcordance)
+      .map(([emotion, stats]) => [emotion, Math.round(stats.sum / Math.max(1, stats.count))])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    const bestEmotionInsight = concordancePairs[0] || ['Happy', 0];
+    const worstEmotionInsight = concordancePairs[concordancePairs.length - 1] || ['Fear', 0];
+
+    const matchCount = safeHistory.filter((row) => row.concordance === 'MATCH').length;
+    const mismatchCount = safeHistory.filter((row) => row.concordance === 'MISMATCH').length;
+
+    const feedbackCards = [
+      {
+        title: `${bestEmotionInsight[0]} is your strongest alignment emotion`,
+        text: `Across multimodal sessions, ${bestEmotionInsight[0]} has your best average concordance at ${bestEmotionInsight[1]}%.`,
+        cls: 'positive'
+      },
+      {
+        title: `${worstEmotionInsight[0]} needs focused practice`,
+        text: `${worstEmotionInsight[0]} currently shows your lowest concordance at ${worstEmotionInsight[1]}%. Try dedicated practice for this emotion.`,
+        cls: 'warning'
+      },
+      {
+        title: 'Suggestion · run more combined sessions',
+        text: 'Combined facial + speech sessions improve trend accuracy and make your feedback more reliable.',
+        cls: 'suggestion'
+      }
+    ];
+
+    const latestComparableSessions = [...safeHistory]
+      .filter((row) => row.modality === 'multimodal')
+      .sort((a, b) => parseRecordTimestamp(b) - parseRecordTimestamp(a))
+      .slice(0, 2);
+
+    return {
+      totalSessions,
+      monthDelta,
+      avgConcordance,
+      weeklyConcordanceDelta,
+      bestSessionScore,
+      bestSessionDate,
+      streakDays,
+      heatmapData: buildHeatmapData(safeHistory),
+      weeklyTrend: buildTrendSeries(safeHistory),
+      emotionFrequency: frequencyPairs.length ? frequencyPairs : [['no-data', 0]],
+      emotionConcordance: concordancePairs.length ? concordancePairs : [['no-data', 0]],
+      bestEmotionInsight: { emotion: bestEmotionInsight[0], rate: bestEmotionInsight[1] },
+      worstEmotionInsight: { emotion: worstEmotionInsight[0], rate: worstEmotionInsight[1] },
+      feedbackCards,
+      latestComparableSessions,
+      matchCount,
+      mismatchCount
+    };
+  }, [history]);
 
   return (
     <div className="ga-layout">
       <aside className="ga-sidebar">
         <div className="ga-brand-wrap">
-          <div className="ga-brand">Emotion Analytics</div>
-          <div className="ga-brand-subtitle">Multimodal Intelligence Console</div>
+          <div className="ga-brand-top">
+            <div className="ga-brand-wordmark" aria-label="MMER">MMER</div>
+          </div>
         </div>
         <nav className="ga-nav">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`ga-nav-item ${activeTab === tab.id ? 'active' : ''}`}
-            >
-              <span className="ga-nav-icon">{tab.icon}</span>
-              <span>{tab.label}</span>
-            </button>
+          {navSections.map((section) => (
+            <div key={section.label} className="ga-nav-section">
+              <div className="ga-nav-label">{section.label}</div>
+              {section.tabIds.map((tabId) => {
+                const tab = tabs.find((item) => item.id === tabId);
+                if (!tab) return null;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`ga-nav-item ${activeTab === tab.id ? 'active' : ''}`}
+                  >
+                    <span className="ga-nav-icon"><DashboardIcon name={tab.icon} /></span>
+                    <span className="ga-nav-item-text">{tab.label}</span>
+                    {tab.badge && <span className="ga-nav-badge">{tab.badge}</span>}
+                  </button>
+                );
+              })}
+            </div>
           ))}
         </nav>
         <div className="ga-sidebar-footer">
-          <div className="ga-user-email">{authUser.email}</div>
-          <button className="ga-text-btn" onClick={onLogout}>Sign out</button>
+          <div className="ga-user-chip">
+            <div className="ga-user-avatar">{profileInitials}</div>
+            <div className="ga-user-email">{authUser.email}</div>
+          </div>
+          <button className="ga-text-btn" onClick={onLogout}>Exit</button>
         </div>
       </aside>
 
       <div className="ga-content-wrap">
         <header className="ga-header">
-          <input
-            className="ga-search"
-            placeholder="Search emotions, notes, explainability..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <div className="ga-top-title">{activeTabLabel}</div>
           <div className="ga-header-actions">
-            <input type="date" className="ga-date" value={dateValue} onChange={(e) => setDateValue(e.target.value)} />
-            <button className="ga-header-btn" onClick={exportHistoryCsv} disabled={!filteredHistory.length}>Export CSV</button>
-            <button className="ga-header-btn" onClick={exportSummaryReport} disabled={!filteredHistory.length}>Summary Report</button>
+            <button className="ga-live-session-btn" onClick={() => setActiveTab(1)}>+ Start Facial Session</button>
+            <button className="ga-header-btn" onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}>
+              {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+            </button>
             <button className="ga-profile" title={authUser?.name || authUser?.email || 'Profile'}>{profileInitials}</button>
           </div>
         </header>
 
         <main className="ga-main">
-          <div className="ga-page-title-row">
-            <div>
-              <h1 className="ga-page-title">{activeTabLabel}</h1>
-              <p className="ga-page-subtitle">{activeDescription}</p>
+          {(activeTab === 5 || activeTab === 9) && (
+            <div className="ga-record-toolbar">
+              <input
+                className="ga-search"
+                placeholder="Search emotions, notes, explainability..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <input type="date" className="ga-date" value={dateValue} onChange={(e) => setDateValue(e.target.value)} />
+              <button className="ga-header-btn" onClick={exportHistoryCsv} disabled={!filteredHistory.length}>Export CSV</button>
+              <button className="ga-header-btn" onClick={exportSummaryReport} disabled={!filteredHistory.length}>Export PDF</button>
             </div>
-            <div className="ga-context-chips">
-              <span className="ga-chip">Today: {todayRecords} records</span>
-              <span className="ga-chip">Total: {history.length} records</span>
-            </div>
-          </div>
+          )}
 
-          {activeTab === 0 && <OverviewTab />}
-          {activeTab === 1 && <div className="ga-card"><FacialTab onResult={addHistoryRecord} /></div>}
-          {activeTab === 2 && <div className="ga-card"><SpeechTab onResult={addHistoryRecord} /></div>}
-          {activeTab === 3 && <div className="ga-card"><CombinedTab onResult={addHistoryRecord} /></div>}
-          {activeTab === 4 && <div className="ga-card"><ModelInfoTab /></div>}
+          {activeTab !== 5 && activeTab !== 9 && (
+            <div className="ga-page-title-row">
+              <div>
+                <h1 className="ga-page-title">{activeTabLabel}</h1>
+                <p className="ga-page-subtitle">{activeDescription}</p>
+              </div>
+              <div className="ga-context-chips">
+                <span className="ga-chip">Today: {todayRecords} records</span>
+                <span className="ga-chip">Total: {history.length} records</span>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 0 && <OverviewTab history={history} analytics={analytics} />}
+          {activeTab === 1 && <div className="ga-card ga-tab-shell"><FacialTab onResult={addHistoryRecord} /></div>}
+          {activeTab === 2 && <div className="ga-card ga-tab-shell"><SpeechTab onResult={addHistoryRecord} /></div>}
+          {activeTab === 3 && <div className="ga-card ga-tab-shell"><CombinedTab onResult={addHistoryRecord} /></div>}
+          {activeTab === 6 && <EmotionTrendsTab analytics={analytics} />}
+          {activeTab === 7 && <AIFeedbackTab analytics={analytics} />}
+          {activeTab === 8 && <CompareSessionsTab analytics={analytics} />}
+          {activeTab === 4 && <div className="ga-card ga-tab-shell"><ModelInfoTab /></div>}
+          {activeTab === 9 && <ExportReportTab onExportCsv={exportHistoryCsv} onExportSummary={exportSummaryReport} analytics={analytics} />}
           {activeTab === 5 && isLoadingHistory && (
             <div className="ga-card">
               <p className="ga-empty">Loading your history...</p>
@@ -2250,6 +2789,15 @@ function ProtectedRoute({ isAuthenticated, children }) {
 function AppRouter() {
   const [authUser, setAuthUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (savedTheme === 'dark' || savedTheme === 'light') {
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  }, []);
 
   useEffect(() => {
     const initAuth = async () => {
