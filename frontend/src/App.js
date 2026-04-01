@@ -343,8 +343,8 @@ function FacialTab({ onResult }) {
       <div className="space-y-4">
         {/* Image Capture Card */}
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-            <span className="text-purple-300 text-sm font-medium">Image Source</span>
+          <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+            <span className="text-blue-300 text-sm font-medium">Image Source</span>
           </div>
           <div className="p-4">
             {!isCameraOn && !imagePreview && (
@@ -352,7 +352,7 @@ function FacialTab({ onResult }) {
                 <p className="text-slate-400 mb-4">Click to Access Webcam</p>
                 <button
                   onClick={startCamera}
-                  className="bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
+                  className="bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
                 >
                   Start Webcam
                 </button>
@@ -423,7 +423,7 @@ function FacialTab({ onResult }) {
                 type="checkbox"
                 checked={showGradCAM}
                 onChange={(e) => setShowGradCAM(e.target.checked)}
-                className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-purple-600 focus:ring-purple-500 focus:ring-offset-slate-800"
+                className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-800"
               />
               <div>
                 <div className="text-slate-50 font-medium">
@@ -442,7 +442,7 @@ function FacialTab({ onResult }) {
           <button
             onClick={analyzeFacial}
             disabled={loading}
-            className="w-full bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Analyzing...' : 'Analyze Face'}
           </button>
@@ -466,8 +466,8 @@ function FacialTab({ onResult }) {
         {/* Confidence Scores */}
         {emotion && probabilities && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-              <span className="text-purple-300 text-sm font-medium">Confidence Scores</span>
+            <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+              <span className="text-blue-300 text-sm font-medium">Confidence Scores</span>
             </div>
             <div className="p-4 space-y-3">
               <div className="text-center mb-4">
@@ -481,12 +481,12 @@ function FacialTab({ onResult }) {
                     <span className="text-slate-300">{EMOTION_EMOJIS[emo]} - {emo}</span>
                     <span className="text-slate-400">{((probabilities[emo] || 0) * 100).toFixed(1)}%</span>
                   </div>
-                  <div className="w-full bg-slate-700 rounded-full h-2">
-                    <div
-                      className="bg-gradient-to-r from-purple-500 to-indigo-500 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${(probabilities[emo] || 0) * 100}%` }}
-                    />
-                  </div>
+                    <div className="w-full bg-slate-700 rounded-full h-2">
+                      <div
+                        className="bg-gradient-to-r from-blue-600 to-blue-800 h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${(probabilities[emo] || 0) * 100}%` }}
+                      />
+                    </div>
                 </div>
               ))}
             </div>
@@ -496,8 +496,8 @@ function FacialTab({ onResult }) {
         {/* Annotated Result */}
         {emotion && (annotatedImage || imagePreview) && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-              <span className="text-purple-300 text-sm font-medium">Face Detection</span>
+            <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+              <span className="text-blue-300 text-sm font-medium">Face Detection</span>
             </div>
             <div className="p-4">
               <p className="text-slate-400 text-sm mb-3">
@@ -513,8 +513,8 @@ function FacialTab({ onResult }) {
         {/* Grad-CAM Heatmap */}
         {gradCam && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-              <span className="text-purple-300 text-sm font-medium">Grad-CAM Heatmap</span>
+            <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+              <span className="text-blue-300 text-sm font-medium">Grad-CAM Heatmap</span>
             </div>
             <div className="p-4">
               <p className="text-slate-400 text-sm mb-3">
@@ -663,8 +663,8 @@ function SpeechTab({ onResult }) {
       <div className="space-y-4">
         {/* Audio Record/Upload Card */}
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-            <span className="text-purple-300 text-sm font-medium">Audio Source</span>
+          <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+            <span className="text-blue-300 text-sm font-medium">Audio Source</span>
           </div>
           <div className="p-4">
             {!isRecording && !audioFile && (
@@ -672,7 +672,7 @@ function SpeechTab({ onResult }) {
                 <p className="text-slate-400 mb-4">Click to Record Audio</p>
                 <button
                   onClick={startRecording}
-                  className="bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
+                  className="bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
                 >
                   Start Recording
                 </button>
@@ -701,7 +701,7 @@ function SpeechTab({ onResult }) {
                     {[...Array(20)].map((_, i) => (
                       <div
                         key={i}
-                        className="w-1 bg-purple-500 rounded-full animate-pulse"
+                        className="w-1 bg-blue-500 rounded-full animate-pulse"
                         style={{
                           height: `${Math.random() * 60 + 20}px`,
                           animationDelay: `${i * 0.05}s`
@@ -753,7 +753,7 @@ function SpeechTab({ onResult }) {
                 type="checkbox"
                 checked={showSaliency}
                 onChange={(e) => setShowSaliency(e.target.checked)}
-                className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-purple-600 focus:ring-purple-500 focus:ring-offset-slate-800"
+                className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-800"
               />
               <div>
                 <div className="text-slate-50 font-medium">
@@ -772,7 +772,7 @@ function SpeechTab({ onResult }) {
           <button
             onClick={analyzeSpeech}
             disabled={loading}
-            className="w-full bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Analyzing...' : 'Analyze Voice'}
           </button>
@@ -796,8 +796,8 @@ function SpeechTab({ onResult }) {
         {/* Confidence Scores */}
         {emotion && probabilities && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-              <span className="text-purple-300 text-sm font-medium">Confidence Scores</span>
+            <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+              <span className="text-blue-300 text-sm font-medium">Confidence Scores</span>
             </div>
             <div className="p-4 space-y-3">
               <div className="text-center mb-4">
@@ -813,7 +813,7 @@ function SpeechTab({ onResult }) {
                   </div>
                   <div className="w-full bg-slate-700 rounded-full h-2">
                     <div
-                      className="bg-gradient-to-r from-purple-500 to-indigo-500 h-2 rounded-full transition-all duration-500"
+                      className="bg-gradient-to-r from-blue-600 to-blue-800 h-2 rounded-full transition-all duration-500"
                       style={{ width: `${(probabilities[emo] || 0) * 100}%` }}
                     />
                   </div>
@@ -826,8 +826,8 @@ function SpeechTab({ onResult }) {
         {/* Audio Waveform */}
         {waveform && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-              <span className="text-purple-300 text-sm font-medium">Audio Waveform</span>
+            <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+              <span className="text-blue-300 text-sm font-medium">Audio Waveform</span>
             </div>
             <div className="p-4">
               <p className="text-slate-400 text-sm mb-3">
@@ -845,8 +845,8 @@ function SpeechTab({ onResult }) {
         {/* Audio Saliency Map */}
         {saliency && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-              <span className="text-purple-300 text-sm font-medium">Audio Saliency Map</span>
+            <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+              <span className="text-blue-300 text-sm font-medium">Audio Saliency Map</span>
             </div>
             <div className="p-4">
               <p className="text-slate-400 text-sm mb-3">
@@ -1266,9 +1266,9 @@ function CombinedTab({ onResult }) {
   return (
     <div className="space-y-4">
       <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
-        <h3 className="text-slate-50 font-semibold mb-1">Analyze Face and Voice Together</h3>
+        <h3 className="text-slate-50 font-semibold mb-1">Combined Analysis</h3>
         <p className="text-slate-400 text-sm">
-          Choose one mode: use separate image + audio inputs (upload or live capture), or analyze a single uploaded/recorded video.
+          Start here to analyze facial and speech emotion together. Separate image and audio inputs, or a single video, are supporting capture modes.
         </p>
       </div>
 
@@ -1294,8 +1294,8 @@ function CombinedTab({ onResult }) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Image Upload */}
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-            <span className="text-purple-300 text-sm font-medium">Image Input</span>
+          <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+            <span className="text-blue-300 text-sm font-medium">Image Input</span>
           </div>
           <div className="p-4">
             {!imagePreview && !isCameraOn && (
@@ -1354,8 +1354,8 @@ function CombinedTab({ onResult }) {
 
         {/* Audio Upload */}
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-            <span className="text-purple-300 text-sm font-medium">Audio Input</span>
+          <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+            <span className="text-blue-300 text-sm font-medium">Audio Input</span>
           </div>
           <div className="p-4">
             {!audioFile && !isAudioRecording && (
@@ -1416,8 +1416,8 @@ function CombinedTab({ onResult }) {
 
       {inputMode === 'video' && (
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <div className="bg-purple-900 px-4 py-2 flex items-center gap-2">
-            <span className="text-purple-300 text-sm font-medium">Video Input</span>
+          <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
+            <span className="text-blue-300 text-sm font-medium">Video Input</span>
           </div>
           <div className="p-4 space-y-4">
             <p className="text-slate-400 text-sm">Upload a video with face + voice, or record one live using webcam and microphone.</p>
@@ -1478,7 +1478,7 @@ function CombinedTab({ onResult }) {
               type="checkbox"
               checked={showExplainability}
               onChange={(e) => setShowExplainability(e.target.checked)}
-              className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-purple-600 focus:ring-purple-500"
+              className="mt-1 w-5 h-5 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500"
             />
             <div>
               <div className="text-slate-50 font-medium">Enable Explainability Output</div>
@@ -1495,9 +1495,9 @@ function CombinedTab({ onResult }) {
         <button
           onClick={analyzeCombined}
           disabled={loading}
-          className="w-full bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50"
+          className="w-full bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50"
         >
-          {loading ? 'Analyzing...' : '🚀 Analyze Both'}
+          {loading ? 'Analyzing...' : '🚀 Analyze Combined'}
         </button>
       )}
 
@@ -1505,7 +1505,7 @@ function CombinedTab({ onResult }) {
         <button
           onClick={analyzeVideo}
           disabled={loading}
-          className="w-full bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50"
+          className="w-full bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50"
         >
           {loading ? 'Analyzing...' : '🚀 Analyze Video'}
         </button>
@@ -1549,8 +1549,8 @@ function CombinedTab({ onResult }) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Facial Results */}
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-              <div className="bg-purple-900 px-4 py-2">
-                <span className="text-purple-300 text-sm font-medium">Facial Emotion</span>
+              <div className="bg-blue-900 px-4 py-2">
+                <span className="text-blue-300 text-sm font-medium">Facial Emotion</span>
               </div>
               <div className="p-4">
                 <div className="text-center mb-4">
@@ -1567,7 +1567,7 @@ function CombinedTab({ onResult }) {
                         </div>
                         <div className="w-full bg-slate-700 rounded-full h-1.5">
                           <div
-                            className="bg-gradient-to-r from-purple-500 to-indigo-500 h-1.5 rounded-full"
+                            className="bg-gradient-to-r from-blue-600 to-blue-800 h-1.5 rounded-full"
                             style={{ width: `${prob * 100}%` }}
                           />
                         </div>
@@ -1580,8 +1580,8 @@ function CombinedTab({ onResult }) {
 
             {/* Speech Results */}
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-              <div className="bg-purple-900 px-4 py-2">
-                <span className="text-purple-300 text-sm font-medium">Speech Emotion</span>
+              <div className="bg-blue-900 px-4 py-2">
+                <span className="text-blue-300 text-sm font-medium">Speech Emotion</span>
               </div>
               <div className="p-4">
                 <div className="text-center mb-4">
@@ -1598,7 +1598,7 @@ function CombinedTab({ onResult }) {
                         </div>
                         <div className="w-full bg-slate-700 rounded-full h-1.5">
                           <div
-                            className="bg-gradient-to-r from-purple-500 to-indigo-500 h-1.5 rounded-full"
+                            className="bg-gradient-to-r from-blue-600 to-blue-800 h-1.5 rounded-full"
                             style={{ width: `${prob * 100}%` }}
                           />
                         </div>
@@ -1613,8 +1613,8 @@ function CombinedTab({ onResult }) {
           {/* Annotated Face */}
           {inputMode === 'separate' && (annotatedFace || imagePreview) && (
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-              <div className="bg-purple-900 px-4 py-2">
-                <span className="text-purple-300 text-sm font-medium">Face Detection</span>
+              <div className="bg-blue-900 px-4 py-2">
+                <span className="text-blue-300 text-sm font-medium">Face Detection</span>
               </div>
               <div className="p-4">
                 <p className="text-slate-400 text-sm mb-3">
@@ -1632,8 +1632,8 @@ function CombinedTab({ onResult }) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {gradCam && (
                 <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                  <div className="bg-purple-900 px-4 py-2">
-                    <span className="text-purple-300 text-sm font-medium">Facial Grad-CAM</span>
+                  <div className="bg-blue-900 px-4 py-2">
+                    <span className="text-blue-300 text-sm font-medium">Facial Grad-CAM</span>
                   </div>
                   <div className="p-4">
                     <img src={`data:image/png;base64,${gradCam}`} alt="Grad-CAM" className="w-full rounded-lg" />
@@ -1642,8 +1642,8 @@ function CombinedTab({ onResult }) {
               )}
               {waveform && (
                 <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                  <div className="bg-purple-900 px-4 py-2">
-                    <span className="text-purple-300 text-sm font-medium">Audio Waveform</span>
+                  <div className="bg-blue-900 px-4 py-2">
+                    <span className="text-blue-300 text-sm font-medium">Audio Waveform</span>
                   </div>
                   <div className="p-4">
                     <img src={`data:image/png;base64,${waveform}`} alt="Waveform" className="w-full rounded-lg" />
@@ -1652,8 +1652,8 @@ function CombinedTab({ onResult }) {
               )}
               {saliency && (
                 <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                  <div className="bg-purple-900 px-4 py-2">
-                    <span className="text-purple-300 text-sm font-medium">Audio Saliency</span>
+                  <div className="bg-blue-900 px-4 py-2">
+                    <span className="text-blue-300 text-sm font-medium">Audio Saliency</span>
                   </div>
                   <div className="p-4">
                     <img src={`data:image/png;base64,${saliency}`} alt="Saliency" className="w-full rounded-lg" />
@@ -1665,8 +1665,8 @@ function CombinedTab({ onResult }) {
 
           {inputMode === 'video' && videoResult && (
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-              <div className="bg-purple-900 px-4 py-2">
-                <span className="text-purple-300 text-sm font-medium">Video Analysis Details</span>
+              <div className="bg-blue-900 px-4 py-2">
+                <span className="text-blue-300 text-sm font-medium">Video Analysis Details</span>
               </div>
               <div className="p-4 text-sm text-slate-300 space-y-2">
                 <div>Combined Emotion: <span className="text-slate-100 font-semibold">{videoResult.combined_emotion}</span></div>
@@ -1717,8 +1717,8 @@ function ModelInfoTab() {
     <div className="space-y-4">
       {/* Model Details */}
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <div className="bg-purple-900 px-4 py-2">
-          <span className="text-purple-300 text-sm font-medium">Model Details</span>
+        <div className="bg-blue-900 px-4 py-2">
+          <span className="text-blue-300 text-sm font-medium">Model Details</span>
         </div>
         <div className="p-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1793,8 +1793,8 @@ function ModelInfoTab() {
 
       {/* System Info */}
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <div className="bg-purple-900 px-4 py-2">
-          <span className="text-purple-300 text-sm font-medium">System Info</span>
+        <div className="bg-blue-900 px-4 py-2">
+          <span className="text-blue-300 text-sm font-medium">System Info</span>
         </div>
         <div className="p-6">
           <div className="space-y-3 text-sm">
@@ -1823,30 +1823,30 @@ function ModelInfoTab() {
 
       {/* How to Use */}
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <div className="bg-purple-900 px-4 py-2">
-          <span className="text-purple-300 text-sm font-medium">How to Use</span>
+        <div className="bg-blue-900 px-4 py-2">
+          <span className="text-blue-300 text-sm font-medium">How to Use</span>
         </div>
         <div className="p-6">
           <div className="space-y-4 text-sm text-slate-300">
             <div>
-              <h4 className="font-semibold text-slate-50 mb-2">Facial Emotion Tab</h4>
+              <h4 className="font-semibold text-slate-50 mb-2">Combined Analysis</h4>
               <p className="text-slate-400">
-                Upload an image or use your webcam to capture a photo. The model will analyze facial expressions and predict emotions.
-                Enable Grad-CAM to see which facial regions influenced the prediction.
+                Upload an image and audio file, or use a single video, to analyze facial and speech emotion together.
+                This is the primary workflow and produces concordance plus explainability outputs.
               </p>
             </div>
             <div>
-              <h4 className="font-semibold text-slate-50 mb-2">Speech Emotion Tab</h4>
+              <h4 className="font-semibold text-slate-50 mb-2">Secondary Facial Analysis</h4>
               <p className="text-slate-400">
-                Record audio or upload an audio file. The model will analyze voice tone and predict emotions.
-                Enable Audio Saliency to see which frequencies were most important.
+                Use facial input alone when you want to inspect the image model independently.
+                Grad-CAM helps you see which facial regions influenced the prediction.
               </p>
             </div>
             <div>
-              <h4 className="font-semibold text-slate-50 mb-2">Combined Analysis Tab</h4>
+              <h4 className="font-semibold text-slate-50 mb-2">Secondary Speech Analysis</h4>
               <p className="text-slate-400">
-                Upload both an image and audio file to analyze facial and vocal emotions simultaneously.
-                The system will compare results and show if emotions match or differ.
+                Use audio alone when you want to inspect the speech model independently.
+                Audio saliency highlights which frequencies were most important.
               </p>
             </div>
           </div>
@@ -2602,7 +2602,7 @@ function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
 const THEME_STORAGE_KEY = 'mmer_theme';
 
 function DashboardConsole({ authUser, onLogout }) {
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState(3);
   const [search, setSearch] = useState('');
   const [dateValue, setDateValue] = useState('');
   const [history, setHistory] = useState([]);
@@ -2623,9 +2623,9 @@ function DashboardConsole({ authUser, onLogout }) {
 
   const tabs = [
     { id: 0, icon: 'overview', label: 'Dashboard' },
-    { id: 1, icon: 'facial', label: 'Facial Upload' },
-    { id: 2, icon: 'speech', label: 'Speech Upload' },
-    { id: 3, icon: 'multimodal', label: 'Combined' },
+    { id: 3, icon: 'multimodal', label: 'Combined Analysis' },
+    { id: 1, icon: 'facial', label: 'Facial Upload (Secondary)' },
+    { id: 2, icon: 'speech', label: 'Speech Upload (Secondary)' },
     { id: 6, icon: 'overview', label: 'Emotion Trends' },
     { id: 7, icon: 'model', label: 'AI Feedback' },
     { id: 8, icon: 'multimodal', label: 'Compare Sessions' },
@@ -2636,16 +2636,16 @@ function DashboardConsole({ authUser, onLogout }) {
 
   const navSections = [
     { label: 'Overview', tabIds: [0] },
-    { label: 'Analysis', tabIds: [1, 2, 3] },
+    { label: 'Analysis', tabIds: [3, 1, 2] },
     { label: 'Insights', tabIds: [6, 7, 8] },
     { label: 'Records', tabIds: [5, 9, 4] }
   ];
 
   const tabDescriptions = {
     0: 'Overview and key session metrics.',
-    1: 'Upload or capture a face image and get explainable emotion predictions.',
-    2: 'Upload or record voice to detect emotion with confidence and saliency cues.',
-    3: 'Run combined face + voice analysis using separate inputs or a single video.',
+    1: 'Secondary facial-only analysis with upload or webcam capture.',
+    2: 'Secondary speech-only analysis with upload or microphone recording.',
+    3: 'Primary combined face + voice analysis using separate inputs or a single video.',
     6: 'View emotion trend summaries across recent sessions.',
     7: 'Get AI-generated feedback and actionable tips.',
     8: 'Compare session-level changes and differences.',
@@ -3221,7 +3221,7 @@ function DashboardConsole({ authUser, onLogout }) {
         <header className="ga-header">
           <div className="ga-top-title">{activeTabLabel}</div>
           <div className="ga-header-actions">
-            <button className="ga-live-session-btn" onClick={() => setActiveTab(1)}>+ Start Facial Session</button>
+            <button className="ga-live-session-btn" onClick={() => setActiveTab(3)}>+ Start Combined Analysis</button>
             <button className="ga-header-btn" onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}>
               {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
             </button>

@@ -1,15 +1,15 @@
 # Multi-Modal Emotion Recognition
 
-Emotion analytics platform combining facial and speech emotion recognition with multimodal concordance analysis, explainability outputs, authentication, and user history tracking.
+Emotion analytics platform centered on combined facial + speech analysis, with facial and speech-only modes kept as secondary workflows. It includes multimodal concordance analysis, explainability outputs, authentication, and user history tracking.
 
 ## Implemented Capabilities
 
 ### 1. Inference Modes
-- Facial emotion prediction (upload + webcam)
-- Speech emotion prediction (upload + live microphone)
 - Combined multimodal prediction:
   - Separate image + audio mode
   - Video mode (upload or live recording)
+- Facial emotion prediction (upload + webcam)
+- Speech emotion prediction (upload + live microphone)
 
 ### 2. Explainability
 - Facial Grad-CAM heatmaps
@@ -25,7 +25,7 @@ Emotion analytics platform combining facial and speech emotion recognition with 
 
 ### 4. Backend API
 - Root and health endpoints
-- Facial, speech, combined, and video prediction endpoints
+- Combined, facial, speech, and video prediction endpoints
 - Emotion list endpoints
 - Model status endpoint
 
