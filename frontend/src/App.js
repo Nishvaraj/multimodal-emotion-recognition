@@ -23,6 +23,32 @@ const EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 
 const EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised'];
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000';
 
+const AUDIO_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
+const VIDEO_MIME_CANDIDATES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+
+function pickSupportedMimeType(candidates) {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return '';
+  }
+  return candidates.find((mime) => MediaRecorder.isTypeSupported(mime)) || '';
+}
+
+function getFileExtensionForMime(mimeType, fallback) {
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.includes('ogg')) return 'ogg';
+  if (mime.includes('mp4')) return 'mp4';
+  if (mime.includes('wav')) return 'wav';
+  if (mime.includes('webm')) return 'webm';
+  return fallback;
+}
+
+function getApiErrorMessage(err, fallback = 'Request failed') {
+  if (err?.response?.data?.error) return String(err.response.data.error);
+  if (err?.response?.data?.detail) return String(err.response.data.detail);
+  if (err?.message) return String(err.message);
+  return fallback;
+}
+
 const CONCORDANCE_SCORE_MAP = {
   MATCH: 100,
   PARTIAL: 65,
@@ -47,6 +73,25 @@ function splitMultimodalEmotions(row) {
   const [facial, speech] = String(row.emotion).split('|').map((item) => item.trim().toLowerCase());
   if (!facial || !speech) return null;
   return { facial, speech };
+}
+
+function extractEmotionLabels(row) {
+  const raw = String(row?.emotion || '').trim().toLowerCase();
+  if (!raw) return [];
+  return raw
+    .split('|')
+    .map((item) => item.trim())
+    .filter((label) => label && label !== 'unknown' && label !== 'no-data');
+}
+
+function formatEmotionLabel(label) {
+  if (!label || label === 'no-data') return 'No Data';
+  return String(label)
+    .replace(/[_-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 function formatPercent(value) {
@@ -124,6 +169,49 @@ function buildTrendSeries(history) {
     const avg = weekRows.reduce((sum, row) => sum + getConcordanceScore(row), 0) / weekRows.length;
     return Math.round(avg);
   });
+  return points;
+}
+
+function buildWeeklySeries(history, { metric = 'concordance', modality = 'all' } = {}) {
+  const now = new Date();
+  const points = Array.from({ length: 12 }, (_, i) => {
+    const end = new Date(now);
+    end.setDate(now.getDate() - ((11 - i) * 7));
+    const start = new Date(end);
+    start.setDate(end.getDate() - 6);
+
+    const weekRows = history.filter((row) => {
+      const t = parseRecordTimestamp(row);
+      const inWindow = t >= start.getTime() && t <= end.getTime();
+      const modalityMatch = modality === 'all' ? true : row.modality === modality;
+      return inWindow && modalityMatch;
+    });
+
+    if (metric === 'volume') {
+      return weekRows.length;
+    }
+
+    if (!weekRows.length) {
+      return 0;
+    }
+
+    if (metric === 'confidence') {
+      const avgConfidence = weekRows.reduce((sum, row) => sum + Number(row.confidence || 0), 0) / weekRows.length;
+      return Math.round(avgConfidence * 100);
+    }
+
+    const avgConcordance = weekRows.reduce((sum, row) => sum + getConcordanceScore(row), 0) / weekRows.length;
+    return Math.round(avgConcordance);
+  });
+
+  if (metric === 'volume') {
+    const max = Math.max(...points, 0);
+    if (max === 0) {
+      return points;
+    }
+    return points.map((count) => Math.round((count / max) * 100));
+  }
+
   return points;
 }
 
@@ -239,9 +327,11 @@ function FacialTab({ onResult }) {
             pinned: false
           });
         }
+      } else {
+        setError(response.data.error || 'Prediction failed');
       }
     } catch (err) {
-      setError('API Error: ' + err.message);
+      setError('API Error: ' + getApiErrorMessage(err, 'Unable to analyze image'));
     } finally {
       setLoading(false);
     }
@@ -446,6 +536,7 @@ function FacialTab({ onResult }) {
 // ============== SPEECH EMOTION TAB ==============
 function SpeechTab({ onResult }) {
   const [audioFile, setAudioFile] = useState(null);
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
   const [emotion, setEmotion] = useState(null);
   const [confidence, setConfidence] = useState(null);
   const [probabilities, setProbabilities] = useState(null);
@@ -459,18 +550,34 @@ function SpeechTab({ onResult }) {
   const [saliency, setSaliency] = useState(null);
   const [waveform, setWaveform] = useState(null);
 
+  useEffect(() => {
+    return () => {
+      if (audioPreviewUrl) {
+        URL.revokeObjectURL(audioPreviewUrl);
+      }
+    };
+  }, [audioPreviewUrl]);
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       chunksRef.current = [];
-      
-      const mediaRecorder = new MediaRecorder(stream);
+
+      const mimeType = pickSupportedMimeType(AUDIO_MIME_CANDIDATES);
+      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(chunksRef.current, { type: 'audio/wav' });
-        setAudioFile(audioBlob);
+        const recorderType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+        const audioBlob = new Blob(chunksRef.current, { type: recorderType });
+        const ext = getFileExtensionForMime(recorderType, 'webm');
+        const recordedFile = new File([audioBlob], `recorded-audio-${Date.now()}.${ext}`, { type: recorderType });
+        if (audioPreviewUrl) {
+          URL.revokeObjectURL(audioPreviewUrl);
+        }
+        setAudioPreviewUrl(URL.createObjectURL(recordedFile));
+        setAudioFile(recordedFile);
       };
       mediaRecorder.start();
       setIsRecording(true);
@@ -491,6 +598,10 @@ function SpeechTab({ onResult }) {
   const handleAudioSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (audioPreviewUrl) {
+        URL.revokeObjectURL(audioPreviewUrl);
+      }
+      setAudioPreviewUrl(URL.createObjectURL(file));
       setAudioFile(file);
       setEmotion(null);
       setSaliency(null);
@@ -536,9 +647,11 @@ function SpeechTab({ onResult }) {
             pinned: false
           });
         }
+      } else {
+        setError(response.data.error || 'Prediction failed');
       }
     } catch (err) {
-      setError('API Error: ' + err.message);
+      setError('API Error: ' + getApiErrorMessage(err, 'Unable to analyze audio'));
     } finally {
       setLoading(false);
     }
@@ -613,6 +726,9 @@ function SpeechTab({ onResult }) {
                 <div className="bg-slate-700 rounded-lg p-4 mb-3">
                   <div className="text-slate-300 text-sm">Audio file loaded</div>
                 </div>
+                {audioPreviewUrl && (
+                  <audio src={audioPreviewUrl} controls className="w-full mb-3" />
+                )}
                 <label className="cursor-pointer inline-block">
                   <div className="text-slate-400 hover:text-slate-300 text-sm">
                     Change Audio
@@ -907,14 +1023,15 @@ function CombinedTab({ onResult }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
       audioChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
+      const mimeType = pickSupportedMimeType(AUDIO_MIME_CANDIDATES);
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       audioRecorderRef.current = recorder;
       recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       recorder.onstop = () => {
-        const mimeType = audioChunksRef.current[0]?.type || 'audio/webm';
-        const blob = new Blob(audioChunksRef.current, { type: mimeType });
-        const ext = mimeType.includes('ogg') ? 'ogg' : 'webm';
-        const recorded = new File([blob], `recorded-audio-${Date.now()}.${ext}`, { type: mimeType });
+        const recorderType = recorder.mimeType || mimeType || audioChunksRef.current[0]?.type || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: recorderType });
+        const ext = getFileExtensionForMime(recorderType, 'webm');
+        const recorded = new File([blob], `recorded-audio-${Date.now()}.${ext}`, { type: recorderType });
         setAudioFile(recorded);
         resetResults();
       };
@@ -972,14 +1089,15 @@ function CombinedTab({ onResult }) {
   const startVideoRecording = () => {
     if (!videoStreamRef.current) return;
     videoChunksRef.current = [];
-    const recorder = new MediaRecorder(videoStreamRef.current);
+    const mimeType = pickSupportedMimeType(VIDEO_MIME_CANDIDATES);
+    const recorder = mimeType ? new MediaRecorder(videoStreamRef.current, { mimeType }) : new MediaRecorder(videoStreamRef.current);
     videoRecorderRef.current = recorder;
     recorder.ondataavailable = (e) => videoChunksRef.current.push(e.data);
     recorder.onstop = () => {
-      const mimeType = videoChunksRef.current[0]?.type || 'video/webm';
-      const blob = new Blob(videoChunksRef.current, { type: mimeType });
-      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      const recorded = new File([blob], `recorded-video-${Date.now()}.${ext}`, { type: mimeType });
+      const recorderType = recorder.mimeType || mimeType || videoChunksRef.current[0]?.type || 'video/webm';
+      const blob = new Blob(videoChunksRef.current, { type: recorderType });
+      const ext = getFileExtensionForMime(recorderType, 'webm');
+      const recorded = new File([blob], `recorded-video-${Date.now()}.${ext}`, { type: recorderType });
       if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
       setVideoFile(recorded);
       setVideoPreviewUrl(URL.createObjectURL(recorded));
@@ -1059,9 +1177,11 @@ function CombinedTab({ onResult }) {
             pinned: false
           });
         }
+      } else {
+        setError(response.data.error || 'Prediction failed');
       }
     } catch (err) {
-      setError('API Error: ' + err.message);
+      setError('API Error: ' + getApiErrorMessage(err, 'Unable to analyze combined input'));
     } finally {
       setLoading(false);
     }
@@ -1133,9 +1253,11 @@ function CombinedTab({ onResult }) {
             pinned: false
           });
         }
+      } else {
+        setError(response.data.error || 'Prediction failed');
       }
     } catch (err) {
-      setError('API Error: ' + err.message);
+      setError('API Error: ' + getApiErrorMessage(err, 'Unable to analyze video'));
     } finally {
       setLoading(false);
     }
@@ -1562,6 +1684,35 @@ function CombinedTab({ onResult }) {
 
 // ============== MODEL INFORMATION TAB ==============
 function ModelInfoTab() {
+  const [modelStatus, setModelStatus] = useState(null);
+  const [statusError, setStatusError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadStatus = async () => {
+      try {
+        const response = await axios.get(`${API_BASE}/api/models/status`);
+        if (mounted) {
+          setModelStatus(response.data || null);
+          setStatusError('');
+        }
+      } catch (err) {
+        if (mounted) {
+          setStatusError(getApiErrorMessage(err, 'Failed to load model status'));
+        }
+      }
+    };
+
+    loadStatus();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const facialAccuracy = Number(modelStatus?.facial?.accuracy);
+  const speechAccuracy = Number(modelStatus?.speech?.accuracy);
+
   return (
     <div className="space-y-4">
       {/* Model Details */}
@@ -1589,7 +1740,9 @@ function ModelInfoTab() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Accuracy:</span>
-                  <span className="text-green-400 font-bold">71.29%</span>
+                  <span className="text-green-400 font-bold">
+                    {Number.isFinite(facialAccuracy) ? `${(facialAccuracy * 100).toFixed(2)}%` : 'N/A'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Model Size:</span>
@@ -1620,7 +1773,9 @@ function ModelInfoTab() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Accuracy:</span>
-                  <span className="text-green-400 font-bold">87.50%</span>
+                  <span className="text-green-400 font-bold">
+                    {Number.isFinite(speechAccuracy) ? `${(speechAccuracy * 100).toFixed(2)}%` : 'N/A'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Model Size:</span>
@@ -1645,16 +1800,23 @@ function ModelInfoTab() {
           <div className="space-y-3 text-sm">
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Device:</span>
-              <span className="text-slate-200 font-medium">CPU/GPU (Auto-detected)</span>
+              <span className="text-slate-200 font-medium">{modelStatus?.device || 'CPU/GPU (Auto-detected)'}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Facial Model Status:</span>
-              <span className="text-green-400 font-medium">Loaded</span>
+              <span className={`${modelStatus?.facial?.loaded ? 'text-green-400' : 'text-amber-300'} font-medium`}>
+                {modelStatus?.facial?.loaded ? 'Loaded' : 'Unavailable'}
+              </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Speech Model Status:</span>
-              <span className="text-green-400 font-medium">Loaded</span>
+              <span className={`${modelStatus?.speech?.loaded ? 'text-green-400' : 'text-amber-300'} font-medium`}>
+                {modelStatus?.speech?.loaded ? 'Loaded' : 'Unavailable'}
+              </span>
             </div>
+            {statusError && (
+              <div className="text-amber-300 text-xs pt-2">Live status unavailable: {statusError}</div>
+            )}
           </div>
         </div>
       </div>
@@ -2111,8 +2273,22 @@ function OverviewTab({ history, analytics }) {
   );
 }
 
-function EmotionTrendsTab({ analytics }) {
-  const trendPoints = analytics.weeklyTrend;
+function EmotionTrendsTab({ analytics, history }) {
+  const [selectedMetric, setSelectedMetric] = useState('concordance');
+  const [selectedModality, setSelectedModality] = useState('all');
+
+  const trendPoints = useMemo(
+    () => buildWeeklySeries(history, { metric: selectedMetric, modality: selectedModality }),
+    [history, selectedMetric, selectedModality]
+  );
+
+  const trendTitle = selectedMetric === 'confidence'
+    ? 'Average confidence over time'
+    : selectedMetric === 'volume'
+      ? 'Session activity over time'
+      : 'Concordance score over time';
+
+  const trendTargetLine = selectedMetric === 'volume' ? 50 : 40;
   const xStep = 500 / Math.max(1, trendPoints.length - 1);
   const pointString = trendPoints
     .map((score, i) => {
@@ -2126,12 +2302,35 @@ function EmotionTrendsTab({ analytics }) {
   return (
     <div className="ga-design-stack">
       <div className="ga-card">
-        <div className="ga-section-title">Concordance score over time</div>
+        <div className="ga-control-row">
+          <div className="ga-section-title" style={{ marginBottom: 0 }}>{trendTitle}</div>
+          <div className="ga-control-group">
+            <select
+              className="ga-select"
+              value={selectedMetric}
+              onChange={(e) => setSelectedMetric(e.target.value)}
+            >
+              <option value="concordance">Concordance</option>
+              <option value="confidence">Confidence</option>
+              <option value="volume">Activity Volume</option>
+            </select>
+            <select
+              className="ga-select"
+              value={selectedModality}
+              onChange={(e) => setSelectedModality(e.target.value)}
+            >
+              <option value="all">All Modalities</option>
+              <option value="multimodal">Combined</option>
+              <option value="facial">Facial</option>
+              <option value="speech">Speech</option>
+            </select>
+          </div>
+        </div>
         <div className="ga-mini-chart-wrap">
-          <svg viewBox="0 0 500 100" className="ga-mini-chart" preserveAspectRatio="none" role="img" aria-label="Concordance trend over last 30 days">
+          <svg viewBox="0 0 500 100" className="ga-mini-chart" preserveAspectRatio="none" role="img" aria-label="Trend over last 12 weeks">
             <polyline points={pointString} className="ga-mini-line" />
             <polyline points={areaString} className="ga-mini-area" />
-            <line x1="0" y1="40" x2="500" y2="40" className="ga-mini-target" />
+            <line x1="0" y1={trendTargetLine} x2="500" y2={trendTargetLine} className="ga-mini-target" />
           </svg>
         </div>
       </div>
@@ -2141,7 +2340,7 @@ function EmotionTrendsTab({ analytics }) {
           <div className="ga-bars">
             {analytics.emotionFrequency.map(([name, value]) => (
               <div key={name} className="ga-bar-row">
-                <div className="ga-bar-label">{name}</div>
+                <div className="ga-bar-label">{formatEmotionLabel(name)}</div>
                 <div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${value}%` }} /></div>
                 <div className="ga-bar-value">{value}%</div>
               </div>
@@ -2153,7 +2352,7 @@ function EmotionTrendsTab({ analytics }) {
           <div className="ga-bars">
             {analytics.emotionConcordance.map(([name, value]) => (
               <div key={name} className="ga-bar-row">
-                <div className="ga-bar-label">{name}</div>
+                <div className="ga-bar-label">{formatEmotionLabel(name)}</div>
                 <div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${value}%` }} /></div>
                 <div className="ga-bar-value">{value}%</div>
               </div>
@@ -2170,7 +2369,7 @@ function AIFeedbackTab({ analytics }) {
   return (
     <div className="ga-design-stack">
       {cards.map((card) => (
-        <div key={card.title} className={`ga-feedback-card ${card.cls}`}>
+        <div key={card.title} className={`ga-card ga-feedback-card ${card.cls}`}>
           <div className="ga-feedback-title">{card.title}</div>
           <div className="ga-feedback-text">{card.text}</div>
         </div>
@@ -2179,38 +2378,128 @@ function AIFeedbackTab({ analytics }) {
   );
 }
 
-function CompareSessionsTab({ analytics }) {
-  const [sessionA, sessionB] = analytics.latestComparableSessions;
+function CompareSessionsTab({ analytics, history }) {
+  const [modalityFilter, setModalityFilter] = useState('all');
+  const comparableSessions = useMemo(
+    () => [...history]
+      .filter((row) => {
+        if (modalityFilter === 'all') return true;
+        if (modalityFilter === 'multimodal') {
+          return row.modality === 'multimodal' || row.modality === 'combined';
+        }
+        return row.modality === modalityFilter;
+      })
+      .sort((a, b) => parseRecordTimestamp(b) - parseRecordTimestamp(a)),
+    [history, modalityFilter]
+  );
+  const [selectedAId, setSelectedAId] = useState('');
+  const [selectedBId, setSelectedBId] = useState('');
+  const [selectedMetric, setSelectedMetric] = useState('concordance');
+
+  useEffect(() => {
+    if (comparableSessions.length < 2) {
+      setSelectedAId('');
+      setSelectedBId('');
+      return;
+    }
+
+    const hasA = comparableSessions.some((row) => String(row.id) === String(selectedAId));
+    const hasB = comparableSessions.some((row) => String(row.id) === String(selectedBId));
+
+    if (!hasA) {
+      setSelectedAId(String(comparableSessions[0].id));
+    }
+    if (!hasB || String(comparableSessions[0].id) === String(selectedBId)) {
+      setSelectedBId(String(comparableSessions[1].id));
+    }
+  }, [comparableSessions, selectedAId, selectedBId]);
+
+  const sessionA = comparableSessions.find((row) => String(row.id) === String(selectedAId)) || null;
+  const sessionB = comparableSessions.find((row) => String(row.id) === String(selectedBId)) || null;
 
   if (!sessionA || !sessionB) {
     return (
       <div className="ga-card">
-        <p className="ga-empty">Need at least two multimodal sessions to compare. Run more combined analyses.</p>
+        <p className="ga-empty">Need at least two sessions for the selected filter to compare.</p>
       </div>
     );
   }
 
-  const scoreDiff = Math.round(getConcordanceScore(sessionA) - getConcordanceScore(sessionB));
+  const confidenceA = Math.round((sessionA.confidence || 0) * 100);
+  const confidenceB = Math.round((sessionB.confidence || 0) * 100);
+  const concordanceA = Math.round(getConcordanceScore(sessionA));
+  const concordanceB = Math.round(getConcordanceScore(sessionB));
+  const selectedValueA = selectedMetric === 'confidence' ? confidenceA : concordanceA;
+  const selectedValueB = selectedMetric === 'confidence' ? confidenceB : concordanceB;
+  const scoreDiff = selectedValueA - selectedValueB;
+  const pairA = splitMultimodalEmotions(sessionA);
+  const pairB = splitMultimodalEmotions(sessionB);
+  const emotionPairA = pairA ? `${pairA.facial} | ${pairA.speech}` : sessionA.emotion;
+  const emotionPairB = pairB ? `${pairB.facial} | ${pairB.speech}` : sessionB.emotion;
 
   return (
     <div className="ga-design-stack">
+      <div className="ga-card">
+        <div className="ga-control-row">
+          <div className="ga-section-title" style={{ marginBottom: 0 }}>Select sessions to compare</div>
+          <div className="ga-control-group">
+            <select className="ga-select" value={modalityFilter} onChange={(e) => setModalityFilter(e.target.value)}>
+              <option value="all">All Session Types</option>
+              <option value="multimodal">Combined/Multimodal</option>
+              <option value="facial">Facial</option>
+              <option value="speech">Speech</option>
+            </select>
+            <select className="ga-select" value={selectedAId} onChange={(e) => setSelectedAId(e.target.value)}>
+              {comparableSessions.map((row) => (
+                <option key={`a-${row.id}`} value={row.id}>
+                  A · {row.modality} · {new Date(row.createdAt).toLocaleString()}
+                </option>
+              ))}
+            </select>
+            <select className="ga-select" value={selectedBId} onChange={(e) => setSelectedBId(e.target.value)}>
+              {comparableSessions.map((row) => (
+                <option key={`b-${row.id}`} value={row.id}>
+                  B · {row.modality} · {new Date(row.createdAt).toLocaleString()}
+                </option>
+              ))}
+            </select>
+            <button
+              className="ga-header-btn"
+              onClick={() => {
+                setSelectedAId(String(sessionB.id));
+                setSelectedBId(String(sessionA.id));
+              }}
+            >
+              Swap
+            </button>
+            <select className="ga-select" value={selectedMetric} onChange={(e) => setSelectedMetric(e.target.value)}>
+              <option value="concordance">Compare Concordance</option>
+              <option value="confidence">Compare Confidence</option>
+            </select>
+          </div>
+        </div>
+      </div>
       <div className="ga-design-two-col">
         <div className="ga-card">
           <div className="ga-section-title">Session A · {formatDayMonth(new Date(parseRecordTimestamp(sessionA)))}</div>
-          <div className="ga-compare-score good">{formatPercent(getConcordanceScore(sessionA))}</div>
+          <div className="ga-compare-score good">{formatPercent(selectedValueA)}</div>
           <div className="ga-compare-note">{sessionA.concordance || 'Session'}</div>
+          <div className="ga-compare-note">Emotion Pair: {emotionPairA}</div>
         </div>
         <div className="ga-card">
           <div className="ga-section-title">Session B · {formatDayMonth(new Date(parseRecordTimestamp(sessionB)))}</div>
-          <div className="ga-compare-score bad">{formatPercent(getConcordanceScore(sessionB))}</div>
+          <div className="ga-compare-score bad">{formatPercent(selectedValueB)}</div>
           <div className="ga-compare-note">{sessionB.concordance || 'Session'}</div>
+          <div className="ga-compare-note">Emotion Pair: {emotionPairB}</div>
         </div>
       </div>
       <div className="ga-card">
         <div className="ga-section-title">What Changed</div>
         <div className="ga-bars">
-          <div className="ga-bar-row"><div className="ga-bar-label">Session A confidence</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${Math.round((sessionA.confidence || 0) * 100)}%` }} /></div><div className="ga-bar-value">{formatPercent((sessionA.confidence || 0) * 100)}</div></div>
-          <div className="ga-bar-row"><div className="ga-bar-label">Session B confidence</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${Math.round((sessionB.confidence || 0) * 100)}%` }} /></div><div className="ga-bar-value">{formatPercent((sessionB.confidence || 0) * 100)}</div></div>
+          <div className="ga-bar-row"><div className="ga-bar-label">Session A confidence</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${confidenceA}%` }} /></div><div className="ga-bar-value">{formatPercent(confidenceA)}</div></div>
+          <div className="ga-bar-row"><div className="ga-bar-label">Session B confidence</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${confidenceB}%` }} /></div><div className="ga-bar-value">{formatPercent(confidenceB)}</div></div>
+          <div className="ga-bar-row"><div className="ga-bar-label">Session A concordance</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${concordanceA}%` }} /></div><div className="ga-bar-value">{formatPercent(concordanceA)}</div></div>
+          <div className="ga-bar-row"><div className="ga-bar-label">Session B concordance</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${concordanceB}%` }} /></div><div className="ga-bar-value">{formatPercent(concordanceB)}</div></div>
           <div className="ga-bar-row"><div className="ga-bar-label">Concordance delta</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${Math.min(100, Math.abs(scoreDiff))}%` }} /></div><div className="ga-bar-value">{scoreDiff >= 0 ? '+' : ''}{scoreDiff}%</div></div>
         </div>
       </div>
@@ -2239,6 +2528,16 @@ function ExportReportTab({ onExportCsv, onExportSummary, analytics }) {
 }
 
 function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
+  const [draftNotes, setDraftNotes] = useState({});
+
+  useEffect(() => {
+    const nextDrafts = {};
+    history.forEach((row) => {
+      nextDrafts[row.id] = row.note || '';
+    });
+    setDraftNotes(nextDrafts);
+  }, [history]);
+
   return (
     <div className="ga-card">
       <div className="ga-section-title">Analysis History</div>
@@ -2270,13 +2569,19 @@ function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
                 <td>
                   <input
                     className="ga-note-input"
-                    value={row.note || ''}
+                    value={draftNotes[row.id] ?? ''}
                     placeholder="Add note"
-                    onChange={(e) => onUpdateNote(row.id, e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setDraftNotes((prev) => ({ ...prev, [row.id]: value }));
+                    }}
                   />
                 </td>
                 <td>
                   <div className="ga-row-actions">
+                    <button className="ga-text-btn" onClick={() => onUpdateNote(row.id, draftNotes[row.id] ?? '')}>
+                      Save
+                    </button>
                     <button className="ga-text-btn" onClick={() => onTogglePin(row.id)}>
                       {row.pinned ? 'Unpin' : 'Pin'}
                     </button>
@@ -2302,7 +2607,9 @@ function DashboardConsole({ authUser, onLogout }) {
   const [dateValue, setDateValue] = useState('');
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [toasts, setToasts] = useState([]);
   const logoDataUrlRef = useRef(null);
+  const toastCounterRef = useRef(0);
   const [theme, setTheme] = useState(() => {
     const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (saved === 'dark' || saved === 'light') {
@@ -2370,6 +2677,24 @@ function DashboardConsole({ authUser, onLogout }) {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
+  useEffect(() => {
+    if (!toasts.length) return undefined;
+
+    const timers = toasts.map((toast) => setTimeout(() => {
+      setToasts((prev) => prev.filter((item) => item.id !== toast.id));
+    }, 2800));
+
+    return () => {
+      timers.forEach((timerId) => clearTimeout(timerId));
+    };
+  }, [toasts]);
+
+  const addToast = (message, type = 'info') => {
+    toastCounterRef.current += 1;
+    const id = `${Date.now()}-${toastCounterRef.current}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+  };
+
   const addHistoryRecord = async (record) => {
     // Save to Supabase
     const saved = await saveAnalysisToSupabase(record);
@@ -2377,6 +2702,9 @@ function DashboardConsole({ authUser, onLogout }) {
       // Reload history from Supabase
       const updated = await loadAnalysisHistoryFromSupabase();
       setHistory(updated);
+      addToast('Session saved to history.', 'success');
+    } else {
+      addToast('Could not save session to history.', 'error');
     }
   };
 
@@ -2387,6 +2715,9 @@ function DashboardConsole({ authUser, onLogout }) {
       if (toggled) {
         const updated = await loadAnalysisHistoryFromSupabase();
         setHistory(updated);
+        addToast(record.pinned ? 'Session unpinned.' : 'Session pinned.', 'success');
+      } else {
+        addToast('Unable to update pin status.', 'error');
       }
     }
   };
@@ -2396,6 +2727,9 @@ function DashboardConsole({ authUser, onLogout }) {
     if (deleted) {
       const updated = await loadAnalysisHistoryFromSupabase();
       setHistory(updated);
+      addToast('Session deleted.', 'success');
+    } else {
+      addToast('Failed to delete session.', 'error');
     }
   };
 
@@ -2403,7 +2737,10 @@ function DashboardConsole({ authUser, onLogout }) {
     const updated = await updateAnalysisNote(id, note);
     if (updated) {
       setHistory((prev) => prev.map((item) => (item.id === id ? { ...item, note } : item)));
+      addToast('Note saved.', 'success');
+      return;
     }
+    addToast('Failed to save note.', 'error');
   };
 
   const filteredHistory = history
@@ -2433,7 +2770,10 @@ function DashboardConsole({ authUser, onLogout }) {
   })();
 
   const exportHistoryCsv = () => {
-    if (!filteredHistory.length) return;
+    if (!filteredHistory.length) {
+      addToast('No records available to export.', 'info');
+      return;
+    }
     const header = ['Time', 'Modality', 'Result', 'Confidence', 'Explainability', 'Concordance', 'Note'];
     const rows = filteredHistory.map((row) => [
       new Date(row.createdAt).toISOString(),
@@ -2454,6 +2794,7 @@ function DashboardConsole({ authUser, onLogout }) {
     a.download = `mmer-history-${dateValue || 'all'}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    addToast('CSV export started.', 'success');
   };
 
   const ensureLogoDataUrl = async () => {
@@ -2471,59 +2812,233 @@ function DashboardConsole({ authUser, onLogout }) {
   };
 
   const exportSummaryReport = async () => {
-    if (!filteredHistory.length) return;
+    if (!filteredHistory.length) {
+      addToast('No records available to export.', 'info');
+      return;
+    }
     const byModality = filteredHistory.reduce((acc, cur) => {
       acc[cur.modality] = (acc[cur.modality] || 0) + 1;
       return acc;
     }, {});
+    const totalRecords = filteredHistory.length;
+    const avgConfidence = totalRecords
+      ? Math.round((filteredHistory.reduce((sum, row) => sum + Number(row.confidence || 0), 0) / totalRecords) * 100)
+      : 0;
+    const avgConcordance = totalRecords
+      ? Math.round(filteredHistory.reduce((sum, row) => sum + getConcordanceScore(row), 0) / totalRecords)
+      : 0;
+    const matchCount = filteredHistory.filter((row) => row.concordance === 'MATCH').length;
+    const matchRate = totalRecords ? Math.round((matchCount / totalRecords) * 100) : 0;
+
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 34;
+    const contentWidth = pageWidth - (margin * 2);
+
+    const colors = {
+      deep: [13, 34, 68],
+      accent: [35, 92, 188],
+      card: [246, 249, 254],
+      stroke: [221, 230, 242],
+      text: [31, 45, 65],
+      muted: [103, 120, 144],
+      white: [255, 255, 255],
+      rowAlt: [250, 252, 255]
+    };
+
+    const toTitleCase = (value) => String(value || '')
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .filter(Boolean)
+      .map((part) => part[0].toUpperCase() + part.slice(1))
+      .join(' ');
+
+    const fitText = (text, maxWidth, suffix = '...') => {
+      const raw = String(text || '');
+      if (doc.getTextWidth(raw) <= maxWidth) return raw;
+      let out = raw;
+      while (out.length > 0 && doc.getTextWidth(`${out}${suffix}`) > maxWidth) {
+        out = out.slice(0, -1);
+      }
+      return out.length ? `${out}${suffix}` : '';
+    };
+
+    doc.setFillColor(...colors.deep);
+    doc.rect(0, 0, pageWidth, 108, 'F');
+    doc.setFillColor(...colors.accent);
+    doc.rect(0, 98, pageWidth, 10, 'F');
 
     try {
       const logoDataUrl = await ensureLogoDataUrl();
-      doc.addImage(logoDataUrl, 'PNG', 40, 34, 48, 48);
+      const props = doc.getImageProperties(logoDataUrl);
+      const maxW = 70;
+      const maxH = 54;
+      const ratio = props.width / props.height;
+      let drawW = maxW;
+      let drawH = maxH;
+      if (ratio >= 1) {
+        drawH = maxW / ratio;
+      } else {
+        drawW = maxH * ratio;
+      }
+      doc.addImage(logoDataUrl, 'PNG', margin, 26 + ((maxH - drawH) / 2), drawW, drawH);
     } catch (err) {
-      // Continue PDF generation even if logo embedding fails.
+      // Continue if logo is not available.
     }
 
+    doc.setTextColor(...colors.white);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(18);
-    doc.text('MMER User Summary Report', 100, 58);
-
+    doc.setFontSize(25);
+    doc.text('Performance Summary', margin + 80, 50);
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
-    doc.text(`User: ${authUser?.email || 'N/A'}`, 40, 104);
-    doc.text(`Range: ${dateValue || 'All records'}`, 40, 122);
-    doc.text(`Total records: ${filteredHistory.length}`, 40, 140);
+    doc.setFontSize(10);
+    doc.text(`User: ${authUser?.email || 'N/A'}`, margin + 80, 68);
+    doc.text(`Range: ${dateValue || 'All records'}`, margin + 80, 83);
+    doc.text(new Date().toLocaleString(), pageWidth - margin, 83, { align: 'right' });
 
-    let y = 170;
+    let y = 124;
+    doc.setTextColor(...colors.text);
     doc.setFont('helvetica', 'bold');
-    doc.text('By Modality', 40, y);
-    y += 18;
-
-    doc.setFont('helvetica', 'normal');
-    Object.entries(byModality).forEach(([key, value]) => {
-      doc.text(`- ${key}: ${value}`, 52, y);
-      y += 16;
-    });
-
+    doc.setFontSize(13);
+    doc.text('Executive Snapshot', margin, y);
     y += 10;
-    doc.setFont('helvetica', 'bold');
-    doc.text('Latest Entries', 40, y);
-    y += 18;
-    doc.setFont('helvetica', 'normal');
 
-    filteredHistory.slice(0, 20).forEach((row, idx) => {
-      const line = `${idx + 1}. ${new Date(row.createdAt).toLocaleString()} | ${row.modality} | ${row.emotion} | ${((row.confidence || 0) * 100).toFixed(1)}%`;
-      const wrapped = doc.splitTextToSize(line, 510);
-      if (y > 780) {
-        doc.addPage();
-        y = 50;
-      }
-      doc.text(wrapped, 40, y);
-      y += 16 * wrapped.length;
+    const cardGap = 8;
+    const cardW = (contentWidth - (cardGap * 3)) / 4;
+    const cardH = 58;
+    const drawCard = (x, yPos, label, value, caption) => {
+      doc.setFillColor(...colors.card);
+      doc.setDrawColor(...colors.stroke);
+      doc.roundedRect(x, yPos, cardW, cardH, 8, 8, 'FD');
+      doc.setTextColor(...colors.muted);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.text(label.toUpperCase(), x + 10, yPos + 16);
+      doc.setTextColor(...colors.text);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text(String(value), x + 10, yPos + 34);
+      doc.setTextColor(...colors.muted);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.text(fitText(caption, cardW - 20), x + 10, yPos + 48);
+    };
+
+    drawCard(margin, y, 'Total Sessions', totalRecords, 'Records in selected range');
+    drawCard(margin + cardW + cardGap, y, 'Avg Confidence', `${avgConfidence}%`, 'Across all sessions');
+    drawCard(margin + ((cardW + cardGap) * 2), y, 'Avg Concordance', `${avgConcordance}%`, 'Match quality score');
+    drawCard(margin + ((cardW + cardGap) * 3), y, 'Match Rate', `${matchRate}%`, `${matchCount}/${totalRecords} sessions match`);
+
+    y += cardH + 16;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(...colors.text);
+    doc.text('Modality Distribution', margin, y);
+    y += 10;
+
+    const entries = Object.entries(byModality).sort((a, b) => b[1] - a[1]);
+    entries.forEach(([modality, count], idx) => {
+      const rowY = y + (idx * 18);
+      const ratio = totalRecords ? count / totalRecords : 0;
+      const labelW = 105;
+      const valueW = 75;
+      const barX = margin + labelW;
+      const barW = contentWidth - labelW - valueW;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(...colors.text);
+      doc.text(fitText(toTitleCase(modality), labelW - 6), margin, rowY + 9);
+      doc.setFillColor(232, 238, 247);
+      doc.roundedRect(barX, rowY, barW, 8, 4, 4, 'F');
+      doc.setFillColor(...colors.accent);
+      doc.roundedRect(barX, rowY, Math.max(4, barW * ratio), 8, 4, 4, 'F');
+      doc.setTextColor(...colors.muted);
+      doc.text(`${count} (${Math.round(ratio * 100)}%)`, margin + contentWidth, rowY + 9, { align: 'right' });
     });
 
-    doc.save(`mmer-summary-${dateValue || 'all'}.pdf`);
+    y += Math.max(1, entries.length) * 18 + 14;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(...colors.text);
+    doc.text('Recent Sessions', margin, y);
+    y += 8;
+
+    const rowH = 20;
+    const tableBottomPadding = 26;
+    const cols = [
+      { label: 'Timestamp', ratio: 0.27 },
+      { label: 'Modality', ratio: 0.14 },
+      { label: 'Emotion', ratio: 0.32 },
+      { label: 'Conf.', ratio: 0.11 },
+      { label: 'Conc.', ratio: 0.16 }
+    ];
+    const colsW = cols.map((col) => ({ ...col, width: Math.floor(contentWidth * col.ratio) }));
+    const widthDelta = contentWidth - colsW.reduce((sum, col) => sum + col.width, 0);
+    colsW[colsW.length - 1].width += widthDelta;
+
+    const drawHeaderRow = (yPos) => {
+      doc.setFillColor(236, 242, 250);
+      doc.setDrawColor(...colors.stroke);
+      doc.rect(margin, yPos, contentWidth, rowH, 'FD');
+      let x = margin;
+      doc.setTextColor(...colors.muted);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      colsW.forEach((col) => {
+        doc.text(col.label, x + 7, yPos + 13);
+        x += col.width;
+      });
+    };
+
+    drawHeaderRow(y);
+    y += rowH;
+
+    const remainingHeight = pageHeight - tableBottomPadding - y;
+    const maxRows = Math.max(1, Math.floor(remainingHeight / rowH));
+    const rowsToRender = filteredHistory.slice(0, maxRows);
+
+    rowsToRender.forEach((row, idx) => {
+      if (idx % 2 === 0) {
+        doc.setFillColor(...colors.rowAlt);
+        doc.rect(margin, y, contentWidth, rowH, 'F');
+      }
+      doc.setDrawColor(...colors.stroke);
+      doc.rect(margin, y, contentWidth, rowH);
+
+      const rowValues = [
+        new Date(row.createdAt).toLocaleString(undefined, {
+          month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        }),
+        toTitleCase(row.modality),
+        toTitleCase((row.emotion || '').replace('|', ' / ')),
+        `${Math.round((row.confidence || 0) * 100)}%`,
+        row.concordance || '-'
+      ];
+
+      let x = margin;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...colors.text);
+      rowValues.forEach((value, valueIdx) => {
+        const colWidth = colsW[valueIdx].width;
+        doc.text(fitText(value, colWidth - 12), x + 7, y + 13);
+        x += colWidth;
+      });
+
+      y += rowH;
+    });
+
+    doc.setTextColor(...colors.muted);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    if (filteredHistory.length > rowsToRender.length) {
+      doc.text(`Showing ${rowsToRender.length} of ${filteredHistory.length} rows for one-page export.`, margin, pageHeight - 16);
+    }
+    doc.text('Page 1 of 1', pageWidth - margin, pageHeight - 16, { align: 'right' });
+
+    doc.save(`performance-summary-${dateValue || 'all'}.pdf`);
+    addToast('PDF export started.', 'success');
   };
 
   const analytics = useMemo(() => {
@@ -2588,19 +3103,18 @@ function DashboardConsole({ authUser, onLogout }) {
       }
     }
 
-    const multimodalRows = safeHistory.filter((row) => row.modality === 'multimodal' && splitMultimodalEmotions(row));
     const emotionCounts = {};
-    const emotionConcordance = {};
-    multimodalRows.forEach((row) => {
-      const pair = splitMultimodalEmotions(row);
-      if (!pair) return;
-      [pair.facial, pair.speech].forEach((emotion) => {
+    const emotionQuality = {};
+    safeHistory.forEach((row) => {
+      const labels = extractEmotionLabels(row);
+      if (!labels.length) return;
+
+      labels.forEach((emotion) => {
         emotionCounts[emotion] = (emotionCounts[emotion] || 0) + 1;
+        emotionQuality[emotion] = emotionQuality[emotion] || { sum: 0, count: 0 };
+        emotionQuality[emotion].sum += getConcordanceScore(row);
+        emotionQuality[emotion].count += 1;
       });
-      const score = getConcordanceScore(row);
-      emotionConcordance[pair.facial] = emotionConcordance[pair.facial] || { sum: 0, count: 0 };
-      emotionConcordance[pair.facial].sum += score;
-      emotionConcordance[pair.facial].count += 1;
     });
 
     const frequencyPairs = Object.entries(emotionCounts)
@@ -2608,37 +3122,38 @@ function DashboardConsole({ authUser, onLogout }) {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
-    const concordancePairs = Object.entries(emotionConcordance)
+    const concordancePairs = Object.entries(emotionQuality)
       .map(([emotion, stats]) => [emotion, Math.round(stats.sum / Math.max(1, stats.count))])
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
-    const bestEmotionInsight = concordancePairs[0] || ['Happy', 0];
-    const worstEmotionInsight = concordancePairs[concordancePairs.length - 1] || ['Fear', 0];
+    const bestEmotionInsight = concordancePairs[0] || ['No Data', 0];
+    const worstEmotionInsight = concordancePairs[concordancePairs.length - 1] || ['No Data', 0];
 
     const matchCount = safeHistory.filter((row) => row.concordance === 'MATCH').length;
     const mismatchCount = safeHistory.filter((row) => row.concordance === 'MISMATCH').length;
 
     const feedbackCards = [
       {
-        title: `${bestEmotionInsight[0]} is your strongest alignment emotion`,
-        text: `Across multimodal sessions, ${bestEmotionInsight[0]} has your best average concordance at ${bestEmotionInsight[1]}%.`,
+        title: `${formatEmotionLabel(bestEmotionInsight[0])} is your strongest pattern`,
+        text: `${formatEmotionLabel(bestEmotionInsight[0])} currently leads with an average quality score of ${bestEmotionInsight[1]}%.`,
         cls: 'positive'
       },
       {
-        title: `${worstEmotionInsight[0]} needs focused practice`,
-        text: `${worstEmotionInsight[0]} currently shows your lowest concordance at ${worstEmotionInsight[1]}%. Try dedicated practice for this emotion.`,
+        title: `${formatEmotionLabel(worstEmotionInsight[0])} needs focused improvement`,
+        text: `${formatEmotionLabel(worstEmotionInsight[0])} is at ${worstEmotionInsight[1]}%. Try short daily sessions and compare outcomes in the Compare Sessions tab.`,
         cls: 'warning'
       },
       {
-        title: 'Suggestion · run more combined sessions',
-        text: 'Combined facial + speech sessions improve trend accuracy and make your feedback more reliable.',
+        title: totalSessions < 3 ? 'Suggestion · run at least 3 sessions' : 'Suggestion · keep trend consistency',
+        text: totalSessions < 3
+          ? 'You have limited data right now. Add more facial, speech, or combined sessions to unlock stronger trend insights.'
+          : `Your weekly trend is ${weeklyConcordanceDelta >= 0 ? 'improving' : 'declining'} by ${Math.abs(weeklyConcordanceDelta)}%. Keep sessions consistent for better signal quality.`,
         cls: 'suggestion'
       }
     ];
 
     const latestComparableSessions = [...safeHistory]
-      .filter((row) => row.modality === 'multimodal')
       .sort((a, b) => parseRecordTimestamp(b) - parseRecordTimestamp(a))
       .slice(0, 2);
 
@@ -2652,10 +3167,10 @@ function DashboardConsole({ authUser, onLogout }) {
       streakDays,
       heatmapData: buildHeatmapData(safeHistory),
       weeklyTrend: buildTrendSeries(safeHistory),
-      emotionFrequency: frequencyPairs.length ? frequencyPairs : [['no-data', 0]],
-      emotionConcordance: concordancePairs.length ? concordancePairs : [['no-data', 0]],
-      bestEmotionInsight: { emotion: bestEmotionInsight[0], rate: bestEmotionInsight[1] },
-      worstEmotionInsight: { emotion: worstEmotionInsight[0], rate: worstEmotionInsight[1] },
+      emotionFrequency: frequencyPairs.length ? frequencyPairs : [['No Data', 0]],
+      emotionConcordance: concordancePairs.length ? concordancePairs : [['No Data', 0]],
+      bestEmotionInsight: { emotion: formatEmotionLabel(bestEmotionInsight[0]), rate: bestEmotionInsight[1] },
+      worstEmotionInsight: { emotion: formatEmotionLabel(worstEmotionInsight[0]), rate: worstEmotionInsight[1] },
       feedbackCards,
       latestComparableSessions,
       matchCount,
@@ -2710,11 +3225,27 @@ function DashboardConsole({ authUser, onLogout }) {
             <button className="ga-header-btn" onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}>
               {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
             </button>
-            <button className="ga-profile" title={authUser?.name || authUser?.email || 'Profile'}>{profileInitials}</button>
+            <button
+              className="ga-profile"
+              title="Open Session History"
+              onClick={() => setActiveTab(5)}
+            >
+              {profileInitials}
+            </button>
           </div>
         </header>
 
         <main className="ga-main">
+          {toasts.length > 0 && (
+            <div className="ga-toast-stack" role="status" aria-live="polite">
+              {toasts.map((toast) => (
+                <div key={toast.id} className={`ga-toast ${toast.type}`}>
+                  {toast.message}
+                </div>
+              ))}
+            </div>
+          )}
+
           {(activeTab === 5 || activeTab === 9) && (
             <div className="ga-record-toolbar">
               <input
@@ -2746,11 +3277,11 @@ function DashboardConsole({ authUser, onLogout }) {
           {activeTab === 1 && <div className="ga-card ga-tab-shell"><FacialTab onResult={addHistoryRecord} /></div>}
           {activeTab === 2 && <div className="ga-card ga-tab-shell"><SpeechTab onResult={addHistoryRecord} /></div>}
           {activeTab === 3 && <div className="ga-card ga-tab-shell"><CombinedTab onResult={addHistoryRecord} /></div>}
-          {activeTab === 6 && <EmotionTrendsTab analytics={analytics} />}
-          {activeTab === 7 && <AIFeedbackTab analytics={analytics} />}
-          {activeTab === 8 && <CompareSessionsTab analytics={analytics} />}
+          {activeTab === 6 && <div className="ga-card ga-tab-shell"><EmotionTrendsTab analytics={analytics} history={history} /></div>}
+          {activeTab === 7 && <div className="ga-card ga-tab-shell"><AIFeedbackTab analytics={analytics} /></div>}
+          {activeTab === 8 && <div className="ga-card ga-tab-shell"><CompareSessionsTab analytics={analytics} history={history} /></div>}
           {activeTab === 4 && <div className="ga-card ga-tab-shell"><ModelInfoTab /></div>}
-          {activeTab === 9 && <ExportReportTab onExportCsv={exportHistoryCsv} onExportSummary={exportSummaryReport} analytics={analytics} />}
+          {activeTab === 9 && <div className="ga-card ga-tab-shell"><ExportReportTab onExportCsv={exportHistoryCsv} onExportSummary={exportSummaryReport} analytics={analytics} /></div>}
           {activeTab === 5 && isLoadingHistory && (
             <div className="ga-card">
               <p className="ga-empty">Loading your history...</p>
