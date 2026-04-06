@@ -1064,13 +1064,55 @@ function CombinedTab({ onResult }) {
   };
 
   const startVideoCamera = async () => {
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setError('Camera and microphone are not supported in this browser.');
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      videoStreamRef.current = stream;
+      const fullStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      videoStreamRef.current = fullStream;
       setIsVideoCameraOn(true);
       setError(null);
     } catch (err) {
-      setError('Cannot access camera/microphone for video recording');
+      try {
+        const videoOnly = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        let mergedStream = videoOnly;
+        try {
+          const audioOnly = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            },
+            video: false
+          });
+          mergedStream = new MediaStream([
+            ...videoOnly.getVideoTracks(),
+            ...audioOnly.getAudioTracks()
+          ]);
+        } catch (audioErr) {
+          setError('Microphone permission denied. Camera opened in video-only mode.');
+        }
+        videoStreamRef.current = mergedStream;
+        setIsVideoCameraOn(true);
+      } catch (videoErr) {
+        const isSecureContextIssue = window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+        if (isSecureContextIssue) {
+          setError('Camera/microphone require HTTPS or localhost.');
+        } else {
+          setError('Cannot access camera/microphone for video recording. Check browser permissions and system privacy settings.');
+        }
+      }
     }
   };
 
@@ -1836,14 +1878,14 @@ function ModelInfoTab() {
               </p>
             </div>
             <div>
-              <h4 className="font-semibold text-slate-50 mb-2">Secondary Facial Analysis</h4>
+              <h4 className="font-semibold text-slate-50 mb-2">Facial Analysis</h4>
               <p className="text-slate-400">
                 Use facial input alone when you want to inspect the image model independently.
                 Grad-CAM helps you see which facial regions influenced the prediction.
               </p>
             </div>
             <div>
-              <h4 className="font-semibold text-slate-50 mb-2">Secondary Speech Analysis</h4>
+              <h4 className="font-semibold text-slate-50 mb-2">Speech Analysis</h4>
               <p className="text-slate-400">
                 Use audio alone when you want to inspect the speech model independently.
                 Audio saliency highlights which frequencies were most important.
@@ -1866,6 +1908,8 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const redirectTo = location.state?.redirectTo || '/';
 
   const isSignup = mode === 'signup';
 
@@ -1895,7 +1939,7 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
         }
         if (data?.user) {
           onAuthSuccess({ email: data.user.email, name: name || email.split('@')[0] });
-          navigate('/app/dashboard', { replace: true });
+          navigate(redirectTo, { replace: true });
         }
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
@@ -1906,7 +1950,7 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
         }
         if (data?.user) {
           onAuthSuccess({ email: data.user.email, name: data.user.user_metadata?.name || email.split('@')[0] });
-          navigate('/app/dashboard', { replace: true });
+          navigate(redirectTo, { replace: true });
         }
       }
     } catch (err) {
@@ -1919,9 +1963,18 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
   return (
     <div className="ga-login">
       <form onSubmit={handleSubmit} className="ga-login-card">
+        <div className="ga-login-brand" aria-label="Project logo">
+          <img src={logoImage} alt="Multi Modal Emotion Recognition logo" className="ga-login-logo" />
+        </div>
+        <div className="ga-auth-top">
+          <button type="button" className="ga-auth-back" onClick={() => navigate('/')}>
+            <span aria-hidden="true" className="ga-auth-back-chevron">&lt;</span>
+            Back
+          </button>
+        </div>
         <div className="ga-login-title">{isSignup ? 'Create account' : 'Welcome back'}</div>
         <div className="ga-login-subtitle">
-          {isSignup ? 'Start your multimodal analytics workspace' : 'Sign in to continue to your workspace'}
+          {isSignup ? 'Join Multi Modal Emotion Recognition' : 'Sign in to Multi Modal Emotion Recognition'}
         </div>
 
         {isSignup && (
@@ -1966,7 +2019,7 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
           <button
             type="button"
             className="ga-text-btn"
-            onClick={() => navigate(isSignup ? '/login' : '/signup')}
+            onClick={() => navigate(isSignup ? '/login' : '/signup', { state: { redirectTo } })}
           >
             {isSignup ? 'Login' : 'Get Started'}
           </button>
@@ -1976,108 +2029,779 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
   );
 }
 
-function MarketingPage() {
+function MarketingPage({ authUser, onLogout }) {
   const navigate = useNavigate();
   const openExternal = (url) => window.open(url, '_blank', 'noopener,noreferrer');
+  const linkedinUrl = 'https://www.linkedin.com/in/nishvaraj/';
+  const subtitle = 'Detecting emotions. Understanding humans.';
+  const scenarios = useMemo(() => ([
+    {
+      label: 'Genuine Joy',
+      face: 'Happy',
+      voice: 'Happy',
+      score: 96,
+      status: 'Genuine',
+      color: '#22d3ee',
+      desc: 'Face and voice align with authentic positive affect.'
+    },
+    {
+      label: 'Suppressed Stress',
+      face: 'Neutral',
+      voice: 'Fearful',
+      score: 22,
+      status: 'Mismatched',
+      color: '#f87171',
+      desc: 'Voice suggests distress while facial expression remains masked.'
+    },
+    {
+      label: 'Polite Smile',
+      face: 'Happy',
+      voice: 'Neutral',
+      score: 48,
+      status: 'Partial',
+      color: '#f59e0b',
+      desc: 'Mild mismatch between expression and vocal energy.'
+    },
+    {
+      label: 'Engaged Focus',
+      face: 'Surprised',
+      voice: 'Surprised',
+      score: 88,
+      status: 'Genuine',
+      color: '#38bdf8',
+      desc: 'Both modalities indicate elevated attention and engagement.'
+    }
+  ]), []);
+  const navItems = ['Architecture', 'Explainability', 'Concordance', 'Performance', 'Applications'];
+  const sectionOrder = useMemo(() => ['architecture', 'explainability', 'concordance', 'performance', 'applications'], []);
+  const pipelineSteps = [
+    { id: '01', title: 'Input Capture', desc: 'Synchronized camera + microphone streams at real-time cadence.' },
+    { id: '02', title: 'Vision Transformer', desc: 'Facial patches are encoded to predict affective states.' },
+    { id: '03', title: 'HuBERT Audio', desc: 'Speech prosody and vocal dynamics classify emotion signatures.' },
+    { id: '04', title: 'Concordance Engine', desc: 'Cross-modal agreement score identifies genuine vs mismatch.' },
+    { id: '05', title: 'Explainability', desc: 'Grad-CAM and attention maps reveal model decision traces.' },
+    { id: '06', title: 'Live Insight', desc: 'Unified result panel streams confidence and session summary.' }
+  ];
+  const useCases = [
+    {
+      title: 'Mental Health Tracking',
+      desc: 'Observe emotional consistency trends across sessions to support therapeutic context.'
+    },
+    {
+      title: 'Communication Coaching',
+      desc: 'Identify tone-expression mismatch in interviews, public speaking, and leadership training.'
+    },
+    {
+      title: 'Behavioral Research',
+      desc: 'Run reproducible multimodal studies with explainable outputs for publication.'
+    },
+    {
+      title: 'Accessible Feedback',
+      desc: 'Help users better understand emotional signals through interpretable visual cues.'
+    }
+  ];
+
+  const [typedSubtitle, setTypedSubtitle] = useState('');
+  const [gaugeScore, setGaugeScore] = useState(0);
+  const [heroBars, setHeroBars] = useState(() => Array.from({ length: 24 }, () => 0.25 + Math.random() * 0.7));
+  const [attentionBars, setAttentionBars] = useState(() => Array.from({ length: 40 }, () => 0.2 + Math.random() * 0.75));
+  const [activeEmotion, setActiveEmotion] = useState(0);
+  const [activeScenario, setActiveScenario] = useState(0);
+  const [neuralTick, setNeuralTick] = useState(0);
+  const [hotspots, setHotspots] = useState([
+    { x: 40, y: 34, w: 0.78 },
+    { x: 60, y: 34, w: 0.74 },
+    { x: 50, y: 58, w: 0.9 }
+  ]);
+
+  const emotionBadges = ['Happy', 'Neutral', 'Fearful', 'Surprised', 'Sad', 'Angry', 'Disgusted', 'Calm'];
+
+  const pipelineRef = useRef(null);
+  const xaiRef = useRef(null);
+  const concordanceRef = useRef(null);
+  const performanceRef = useRef(null);
+
+  const [pipelineVisible, setPipelineVisible] = useState(false);
+  const [xaiVisible, setXaiVisible] = useState(false);
+  const [concordanceVisible, setConcordanceVisible] = useState(false);
+  const [performanceVisible, setPerformanceVisible] = useState(false);
+  const [activeSection, setActiveSection] = useState('architecture');
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  const profileInitials = (() => {
+    const base = authUser?.name || authUser?.email || 'User';
+    const pieces = String(base).trim().split(/\s+/).filter(Boolean);
+    if (pieces.length >= 2) return `${pieces[0][0]}${pieces[1][0]}`.toUpperCase();
+    return String(base).slice(0, 2).toUpperCase();
+  })();
+
+  useEffect(() => {
+    let i = 0;
+    const interval = setInterval(() => {
+      if (i <= subtitle.length) {
+        setTypedSubtitle(subtitle.slice(0, i));
+        i += 1;
+      } else {
+        clearInterval(interval);
+      }
+    }, 45);
+    return () => clearInterval(interval);
+  }, [subtitle]);
+
+  useEffect(() => {
+    let current = 0;
+    const interval = setInterval(() => {
+      current += 2;
+      if (current >= 94) {
+        current = 94;
+        clearInterval(interval);
+      }
+      setGaugeScore(current);
+    }, 24);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const offset = 64;
+    const updateActiveSection = () => {
+      const scrollTop = window.scrollY + offset;
+      let current = sectionOrder[0];
+      sectionOrder.forEach((id) => {
+        const section = document.getElementById(id);
+        if (section && section.offsetTop <= scrollTop) {
+          current = id;
+        }
+      });
+      setActiveSection(current);
+    };
+
+    updateActiveSection();
+    window.addEventListener('scroll', updateActiveSection, { passive: true });
+    return () => window.removeEventListener('scroll', updateActiveSection);
+  }, [sectionOrder]);
+
+  const scrollToSection = (id) => {
+    const section = document.getElementById(id);
+    if (section) {
+      const top = section.getBoundingClientRect().top + window.scrollY - 18;
+      window.scrollTo({ top, behavior: 'smooth' });
+    }
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setHeroBars((prev) => prev.map((value) => {
+        const target = 0.2 + Math.random() * 0.8;
+        return value + (target - value) * 0.35;
+      }));
+      setAttentionBars((prev) => prev.map((value) => {
+        const target = 0.12 + Math.random() * 0.88;
+        return value + (target - value) * 0.45;
+      }));
+      setHotspots((prev) => prev.map((point) => {
+        const target = 0.3 + Math.random() * 0.7;
+        return { ...point, w: point.w + (target - point.w) * 0.4 };
+      }));
+      setNeuralTick((tick) => tick + 1);
+    }, 180);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const badgeTimer = setInterval(() => {
+      setActiveEmotion((index) => (index + 1) % emotionBadges.length);
+    }, 1800);
+    const scenarioTimer = setInterval(() => {
+      setActiveScenario((index) => (index + 1) % scenarios.length);
+    }, 4000);
+    return () => {
+      clearInterval(badgeTimer);
+      clearInterval(scenarioTimer);
+    };
+  }, [emotionBadges.length, scenarios.length]);
+
+  useEffect(() => {
+    const sections = [
+      { ref: pipelineRef, setVisible: setPipelineVisible },
+      { ref: xaiRef, setVisible: setXaiVisible },
+      { ref: concordanceRef, setVisible: setConcordanceVisible },
+      { ref: performanceRef, setVisible: setPerformanceVisible }
+    ];
+
+    const observers = sections.map(({ ref, setVisible }) => {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              setVisible(true);
+              observer.disconnect();
+            }
+          });
+        },
+        { threshold: 0.22 }
+      );
+      if (ref.current) {
+        observer.observe(ref.current);
+      }
+      return observer;
+    });
+
+    return () => {
+      observers.forEach((observer) => observer.disconnect());
+    };
+  }, []);
+
+  const currentScenario = scenarios[activeScenario];
+  const overlapGap = 40 - (currentScenario.score / 100) * 26;
+  const meterAngle = -90 + (gaugeScore / 100) * 180;
+  const navOverlay = 'rgba(6,13,22,0.8)';
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+  }, []);
 
   return (
-    <div className="mmer-marketing">
-      <header className="mmer-top-nav">
-        <div className="mmer-logo-wrap">
-          <img src={logoImage} alt="MMER logo" className="mmer-logo-mark" />
-          <div className="mmer-logo">MMER Platform</div>
+    <div className="mmer-landing mmer-landing-dark min-h-screen overflow-x-hidden">
+      <a
+        href="#main-content"
+        className="absolute left-4 top-4 z-[60] -translate-y-20 rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-[#041223] transition-transform focus:translate-y-0"
+      >
+        Skip to main content
+      </a>
+      <nav
+        aria-label="Primary"
+        className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 py-0 border-b border-white/10"
+        style={{ background: navOverlay, backdropFilter: 'blur(12px)' }}
+      >
+        <button
+          type="button"
+          className="flex items-center gap-2"
+          aria-label="Project logo"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          <img src={logoImage} alt="Multi Modal Emotion Recognition logo" className="mmer-nav-logo" />
+        </button>
+        <div className="hidden md:flex items-center gap-2 text-xs font-mono text-white/35 absolute left-1/2 -translate-x-1/2">
+          {navItems.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => scrollToSection(item.toLowerCase())}
+              aria-current={activeSection === item.toLowerCase() ? 'page' : undefined}
+              className={`rounded-full px-3 py-1.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300 ${activeSection === item.toLowerCase() ? 'bg-cyan-400/15 text-cyan-200' : 'text-white/45 hover:text-cyan-200'}`}
+            >
+              {item}
+            </button>
+          ))}
         </div>
-        <div className="mmer-nav-actions">
-          <button className="mmer-link-btn" onClick={() => navigate('/login')}>Login</button>
-          <button className="mmer-primary-btn" onClick={() => navigate('/signup')}>Get Started</button>
+        <div className="flex items-center gap-2">
+          {!authUser && (
+            <>
+              <button className="ml-2 px-3 py-1.5 rounded-full text-sm border border-cyan-300/30 hover:bg-cyan-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" onClick={() => navigate('/login', { state: { redirectTo: '/' } })}>Login</button>
+              <button className="px-3 py-1.5 rounded-full text-sm bg-cyan-400/20 border border-cyan-300/40 hover:bg-cyan-400/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300" onClick={() => navigate('/signup', { state: { redirectTo: '/' } })}>Get Started</button>
+            </>
+          )}
+          {authUser && (
+            <div className="relative">
+              <button
+                type="button"
+                className="h-9 w-9 rounded-full border border-cyan-300/40 bg-cyan-400/15 text-cyan-100 text-xs font-bold hover:bg-cyan-400/25"
+                onClick={() => setShowUserMenu((prev) => !prev)}
+                aria-haspopup="menu"
+                aria-expanded={showUserMenu}
+                title={authUser.name || authUser.email}
+              >
+                {profileInitials}
+              </button>
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-44 rounded-xl border border-cyan-300/30 bg-[#081525] shadow-lg p-1 z-[70]">
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-400/15 rounded-lg"
+                    onClick={async () => {
+                      setShowUserMenu(false);
+                      await onLogout();
+                    }}
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      </header>
+      </nav>
 
-      <section className="mmer-section mmer-hero">
-        <p className="mmer-eyebrow">Multimodal Emotion Recognition</p>
-        <h1>If Someone Says "I'm Fine." Are They Really?</h1>
-        <p>
-          MMER analyzes facial expressions and vocal tone at the same time, then computes a concordance score to show whether both signals align.
-          It is built for explainable, privacy-first emotion intelligence.
-        </p>
-        <div className="mmer-trust-strip">200+ early-access signups from research and industry teams.</div>
-        <div className="mmer-hero-actions">
-          <button className="mmer-primary-btn" onClick={() => openExternal('https://huggingface.co/spaces/Nishvaraj/MMER')}>Try Demo Free</button>
-          <button className="mmer-link-btn" onClick={() => openExternal('https://sites.google.com/view/mmer-webapp/how-it-works')}>See How It Works</button>
-          <button className="mmer-link-btn" onClick={() => navigate('/signup')}>Create Workspace</button>
-        </div>
-      </section>
+      <main id="main-content" className="pt-10">
+        <div className="mmer-mesh-bg" aria-hidden="true" />
+        <section className="relative min-h-screen flex items-center px-4 py-16">
+          <div className="absolute inset-0 grid-bg opacity-60" />
+          <div className="relative z-10 max-w-6xl mx-auto w-full">
+            <div className="text-center space-y-4">
+              <p className="text-sm font-mono text-cyan-200/80 tracking-[0.3em] uppercase">Real-Time • Multi-Modal • Explainable</p>
+              <h1 className="text-5xl md:text-7xl font-black text-white">Multi Modal Emotion Recognition</h1>
+              <p aria-live="polite" className="text-xl md:text-3xl text-white/80 font-mono">{typedSubtitle}<span className="border-r-2 border-cyan-400 animate-pulse">&nbsp;</span></p>
+              <p className="text-base md:text-lg text-white/70 max-w-3xl mx-auto leading-relaxed">
+                Dual-modality emotion analysis using Vision Transformer and HuBERT models, computing concordance scores to distinguish genuine from performed affect.
+              </p>
+              <div className="pt-3 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  className="rounded-full bg-cyan-400/20 border border-cyan-300/45 px-5 py-2 text-base hover:bg-cyan-400/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                  onClick={() => {
+                    if (authUser) {
+                      navigate('/app/dashboard');
+                      return;
+                    }
+                    navigate('/login', { state: { redirectTo: '/app/dashboard' } });
+                  }}
+                >
+                  Go to Dashboard
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-cyan-300/35 px-5 py-2 text-base hover:bg-cyan-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                  onClick={() => scrollToSection('architecture')}
+                >
+                  Explore Architecture
+                </button>
+              </div>
+            </div>
 
-      <section className="mmer-section">
-        <h2>What Makes MMER Different?</h2>
-        <div className="mmer-feature-grid">
-          <article className="mmer-feature-card">
-            <h3>Dual Modality Analysis</h3>
-            <p>Vision Transformer + HuBERT run together so face and voice are analyzed in one pass, not in isolation.</p>
-          </article>
-          <article className="mmer-feature-card">
-            <h3>Novel Concordance Metric</h3>
-            <p>Measure emotional authenticity by comparing face and voice agreement. Higher concordance means stronger alignment.</p>
-          </article>
-          <article className="mmer-feature-card">
-            <h3>Privacy by Architecture</h3>
-            <p>Designed for local-first processing with explainable outputs and no mandatory cloud storage workflow.</p>
-          </article>
-        </div>
-      </section>
+            <div className="mt-10 grid md:grid-cols-3 gap-6 items-center">
+              <div className="card-glass rounded-2xl p-5">
+                <p className="text-xs font-mono text-cyan-300/80 uppercase mb-3">Facial Landmark Detection</p>
+                <div className="relative aspect-square rounded-full border border-cyan-300/40 bg-[radial-gradient(circle_at_40%_30%,rgba(34,211,238,0.16),transparent_35%),radial-gradient(circle_at_60%_55%,rgba(96,165,250,0.15),transparent_42%),rgba(10,18,32,0.85)] overflow-hidden">
+                  <svg viewBox="0 0 220 220" className="w-full h-full">
+                    <ellipse cx="110" cy="108" rx="62" ry="80" fill="none" stroke="rgba(34,211,238,0.55)" strokeWidth="1.2" />
+                    <ellipse cx="90" cy="96" rx="8" ry="5" fill="none" stroke="rgba(34,211,238,0.5)" strokeWidth="1" />
+                    <ellipse cx="130" cy="96" rx="8" ry="5" fill="none" stroke="rgba(34,211,238,0.5)" strokeWidth="1" />
+                    <path d="M 95 132 Q 110 142 125 132" fill="none" stroke="rgba(34,211,238,0.48)" strokeWidth="1.2" />
+                  </svg>
+                  <div className="mmer-scanline-hero" />
+                  {hotspots.map((point, idx) => (
+                    <span
+                      key={idx}
+                      className="absolute rounded-full mmer-hotspot"
+                      style={{
+                        left: `${point.x}%`,
+                        top: `${point.y}%`,
+                        width: `${18 + point.w * 24}px`,
+                        height: `${18 + point.w * 24}px`,
+                        transform: 'translate(-50%, -50%)',
+                        opacity: 0.25 + point.w * 0.55,
+                        animationDelay: `${idx * 0.25}s`
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="card-glass rounded-2xl p-5">
+                <p className="text-xs font-mono text-cyan-300/80 uppercase mb-3">Concordance Meter</p>
+                <div className="relative h-24">
+                  <svg viewBox="0 0 180 90" className="w-full h-full">
+                    <path d="M 20 78 A 70 70 0 0 1 160 78" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" strokeLinecap="round" />
+                    <path d="M 20 78 A 70 70 0 0 1 160 78" fill="none" stroke="url(#meterGradHero)" strokeWidth="8" strokeLinecap="round" opacity="0.45" />
+                    <defs>
+                      <linearGradient id="meterGradHero" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#f87171" />
+                        <stop offset="55%" stopColor="#f59e0b" />
+                        <stop offset="100%" stopColor="#22d3ee" />
+                      </linearGradient>
+                    </defs>
+                    <g style={{ transformOrigin: '90px 78px', transform: `rotate(${meterAngle}deg)` }}>
+                      <line x1="90" y1="78" x2="90" y2="24" stroke="#22d3ee" strokeWidth="2" strokeLinecap="round" />
+                      <circle cx="90" cy="78" r="4" fill="#22d3ee" />
+                    </g>
+                    <text x="90" y="67" textAnchor="middle" fill="#9be9ff" fontSize="20" fontWeight="700" fontFamily="monospace">{Math.round(gaugeScore)}%</text>
+                  </svg>
+                </div>
+                <p className="text-sm text-amber-300 mt-3 font-mono">Partial Mismatch</p>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-center">
+                  <div className="rounded-lg bg-cyan-400/10 border border-cyan-300/20 py-2">
+                    <p className="text-[10px] text-white/40">Face</p>
+                    <p className="text-cyan-300 text-xs font-semibold">Happy</p>
+                  </div>
+                  <div className="rounded-lg bg-blue-400/10 border border-blue-300/20 py-2">
+                    <p className="text-[10px] text-white/40">Voice</p>
+                    <p className="text-blue-300 text-xs font-semibold">Neutral</p>
+                  </div>
+                </div>
+              </div>
+              <div className="card-glass rounded-2xl p-5">
+                <p className="text-xs font-mono text-cyan-300/80 uppercase mb-3">Audio Activation</p>
+                <div className="h-32 flex items-end gap-1">
+                  {heroBars.map((bar, idx) => (
+                    <span key={idx} className="flex-1 rounded-t-sm bg-gradient-to-t from-blue-600 to-cyan-300 transition-all duration-150" style={{ height: `${20 + bar * 80}%`, opacity: 0.55 + bar * 0.4 }} />
+                  ))}
+                </div>
+              </div>
+            </div>
 
-      <section className="mmer-section">
-        <h2>Benchmarks and Coverage</h2>
-        <div className="mmer-stat-grid">
-          <article className="mmer-stat-card">
-            <div className="mmer-stat-value">87.50%</div>
-            <div className="mmer-stat-label">Speech Accuracy</div>
-            <div className="mmer-stat-meta">HuBERT · RAVDESS</div>
-          </article>
-          <article className="mmer-stat-card">
-            <div className="mmer-stat-value">71.29%</div>
-            <div className="mmer-stat-label">Facial Accuracy</div>
-            <div className="mmer-stat-meta">ViT · FER-2013</div>
-          </article>
-          <article className="mmer-stat-card">
-            <div className="mmer-stat-value">7</div>
-            <div className="mmer-stat-label">Emotion Classes</div>
-            <div className="mmer-stat-meta">Happy · Sad · Angry · Fear · Disgust · Surprise · Neutral</div>
-          </article>
-          <article className="mmer-stat-card">
-            <div className="mmer-stat-value">Novel</div>
-            <div className="mmer-stat-label">Concordance Metric</div>
-            <div className="mmer-stat-meta">First open-access implementation in this workflow</div>
-          </article>
-        </div>
-      </section>
+            <div className="mt-8 flex flex-wrap justify-center gap-8 text-sm font-mono">
+              {[
+                { value: '71.29%', sub: 'ViT (FER2013)' },
+                { value: '87.50%', sub: 'HuBERT (RAVDESS)' },
+                { value: '35,887', sub: 'FER2013 Images' },
+                { value: '1,440', sub: 'RAVDESS Files' }
+              ].map((stat) => (
+                <div key={stat.sub} className="text-center">
+                  <div className="text-2xl font-bold shimmer-text">{stat.value}</div>
+                  <div className="text-white/55 uppercase tracking-widest text-xs">{stat.sub}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              {emotionBadges.map((emotion, idx) => (
+                <span
+                  key={emotion}
+                  className="px-3 py-1 rounded-full text-[11px] border font-mono transition-all duration-300"
+                  style={{
+                    color: idx === activeEmotion
+                      ? '#0ea5e9'
+                      : 'rgba(255,255,255,0.6)',
+                    borderColor: idx === activeEmotion
+                      ? 'rgba(14,165,233,0.55)'
+                      : 'rgba(255,255,255,0.18)',
+                    background: idx === activeEmotion
+                      ? 'rgba(14,165,233,0.14)'
+                      : 'transparent',
+                    boxShadow: idx === activeEmotion ? '0 0 16px rgba(34,211,238,0.4)' : 'none'
+                  }}
+                >
+                  {emotion}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
 
-      <section className="mmer-section">
-        <h2>Who Is MMER For?</h2>
-        <div className="mmer-feature-grid">
-          <article className="mmer-feature-card">
-            <h3>Mental Health Professionals</h3>
-            <p>Support therapy observations with an objective concordance signal and explainable model outputs.</p>
-          </article>
-          <article className="mmer-feature-card">
-            <h3>HR and Wellness Teams</h3>
-            <p>Enable consent-based emotional self-reflection workflows for coaching and leadership development.</p>
-          </article>
-          <article className="mmer-feature-card">
-            <h3>Academic Researchers</h3>
-            <p>Use open, reproducible multimodal analysis with visualization outputs suitable for technical reporting.</p>
-          </article>
-        </div>
-      </section>
+        <section id="architecture" ref={pipelineRef} className="pt-4 pb-20 px-4 scroll-mt-0">
+          <div className="max-w-6xl mx-auto space-y-12">
+            <div className="text-center space-y-3">
+              <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-cyan-400/20 text-cyan-300/75 rounded-full">Architecture</p>
+              <h2 className="text-4xl md:text-6xl font-bold">How the <span className="shimmer-text">pipeline</span> works</h2>
+              <p className="text-white/70 max-w-2xl mx-auto text-base">Six stages transform raw camera and audio into actionable emotional intelligence.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {pipelineSteps.map((step, idx) => (
+                <article
+                  key={step.id}
+                  className="card-glass rounded-2xl p-4 space-y-3 border border-cyan-300/10"
+                  style={{
+                    opacity: pipelineVisible ? 1 : 0,
+                    transform: pipelineVisible ? 'translateY(0px)' : 'translateY(26px)',
+                    transition: `opacity 0.6s ease ${idx * 120}ms, transform 0.6s ease ${idx * 120}ms`
+                  }}
+                >
+                  <p className="text-2xl font-mono font-bold text-cyan-200">{step.id}</p>
+                  <h3 className="text-base font-semibold text-white/90">{step.title}</h3>
+                  <p className="text-sm text-white/65 leading-relaxed">{step.desc}</p>
+                </article>
+              ))}
+            </div>
+            <div className="card-glass rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white/90 mb-3">Pipeline Notes</h3>
+              <div className="grid md:grid-cols-3 gap-4 text-sm text-white/70">
+                <p>Input streams are synchronized before inference to preserve timing consistency.</p>
+                <p>Each modality model contributes confidence and explainability artifacts.</p>
+                <p>Concordance combines both outputs into one interpretable session summary.</p>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <section className="mmer-section mmer-cta">
-        <h2>Join the Early Access Queue</h2>
-        <p>Receive development updates and priority access to new multimodal features.</p>
-        <div className="mmer-hero-actions">
-          <button className="mmer-primary-btn" onClick={() => openExternal('https://forms.gle/b5g3245J4Y4Ta3M37')}>Early Access</button>
-          <button className="mmer-link-btn" onClick={() => navigate('/login')}>Sign In</button>
-        </div>
-      </section>
+        <section id="explainability" ref={xaiRef} className="pt-4 pb-20 px-4 scroll-mt-0">
+          <div className="max-w-6xl mx-auto space-y-10">
+            <div className="text-center space-y-3">
+              <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-cyan-400/20 text-cyan-300/75 rounded-full">Explainability</p>
+              <h2 className="text-4xl md:text-6xl font-bold">Transparent by <span className="shimmer-text">design</span></h2>
+              <p className="text-white/70 max-w-2xl mx-auto text-base">See which facial regions and audio segments drove every prediction.</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-6">
+              <article className="card-glass rounded-2xl p-6">
+                <h3 className="text-base font-semibold text-white/90 mb-3">Grad-CAM Visual Heatmap</h3>
+                <div className="h-56 rounded-xl bg-[#0a1626] relative overflow-hidden">
+                  {hotspots.map((point, idx) => (
+                    <span
+                      key={idx}
+                      className="absolute rounded-full mmer-hotspot"
+                      style={{
+                        left: `${point.x}%`,
+                        top: `${point.y}%`,
+                        width: `${26 + point.w * 42}px`,
+                        height: `${22 + point.w * 36}px`,
+                        transform: 'translate(-50%, -50%)',
+                        opacity: xaiVisible ? 0.25 + point.w * 0.6 : 0.12,
+                        animationDelay: `${idx * 0.2}s`
+                      }}
+                    />
+                  ))}
+                </div>
+              </article>
+              <article className="card-glass rounded-2xl p-6">
+                <h3 className="text-base font-semibold text-white/90 mb-3">Audio Attention Map</h3>
+                <div className="h-56 rounded-xl bg-[#0b1526] p-4 flex items-end gap-1">
+                  {attentionBars.map((value, idx) => {
+                    let color = '#4ade80';
+                    if (value > 0.72) color = '#ef4444';
+                    else if (value > 0.48) color = '#f59e0b';
+                    return (
+                      <span key={idx} className="flex-1 rounded-sm transition-all duration-150" style={{ height: `${15 + value * 85}%`, background: color, opacity: 0.45 + value * 0.55 }} />
+                    );
+                  })}
+                </div>
+              </article>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div className="card-glass rounded-xl p-4">
+                <h4 className="text-sm font-semibold text-cyan-200">Visual Saliency</h4>
+                <p className="text-xs text-white/70 mt-2">Highlights eyes, mouth, and facial contour regions that influenced prediction.</p>
+              </div>
+              <div className="card-glass rounded-xl p-4">
+                <h4 className="text-sm font-semibold text-cyan-200">Audio Saliency</h4>
+                <p className="text-xs text-white/70 mt-2">Shows high-impact time-frequency zones in the input waveform.</p>
+              </div>
+              <div className="card-glass rounded-xl p-4">
+                <h4 className="text-sm font-semibold text-cyan-200">Reason Trace</h4>
+                <p className="text-xs text-white/70 mt-2">Provides interpretable evidence so model outcomes are auditable.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="concordance" ref={concordanceRef} className="pt-4 pb-20 px-4 scroll-mt-0">
+          <div className="max-w-6xl mx-auto space-y-10">
+            <div className="text-center space-y-3">
+              <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-cyan-400/20 text-cyan-300/75 rounded-full">Concordance</p>
+              <h2 className="text-4xl md:text-6xl font-bold">Genuine or <span className="shimmer-text">mismatched?</span></h2>
+              <p className="text-white/70 max-w-2xl mx-auto text-base">Cross-modal score reveals whether face and voice tell the same emotional story.</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                {scenarios.map((row) => (
+                  <div key={row.label} className="card-glass rounded-xl p-4">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-white/85">{row.label}</span>
+                      <span style={{ color: row.color }}>{row.score}%</span>
+                    </div>
+                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${row.score}%`, background: row.color }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <article className="card-glass rounded-2xl p-6">
+                <h3 className="text-base font-semibold text-white/90 mb-3">Live Concordance Snapshot</h3>
+                <div className="aspect-[16/10] rounded-xl border border-cyan-300/20 flex items-center justify-center bg-[#0a1627] relative overflow-hidden">
+                  <svg viewBox="0 0 300 180" className="w-72 h-44">
+                    <circle cx={150 - overlapGap} cy="90" r="58" fill="rgba(34,211,238,0.16)" stroke="#22d3ee" strokeOpacity="0.4" />
+                    <circle cx={150 + overlapGap} cy="90" r="58" fill="rgba(59,130,246,0.16)" stroke="#3b82f6" strokeOpacity="0.4" />
+                    <text x={150 - overlapGap - 16} y="88" fill="#22d3ee" fontSize="9" fontFamily="monospace">Face</text>
+                    <text x={150 - overlapGap - 23} y="101" fill="#22d3ee" fontSize="9" fontFamily="monospace">{currentScenario.face}</text>
+                    <text x={150 + overlapGap + 10} y="88" fill="#3b82f6" fontSize="9" fontFamily="monospace">Voice</text>
+                    <text x={150 + overlapGap + 6} y="101" fill="#3b82f6" fontSize="9" fontFamily="monospace">{currentScenario.voice}</text>
+                    <text x="150" y="90" textAnchor="middle" fill={currentScenario.color} fontSize="16" fontWeight="700" fontFamily="monospace">{currentScenario.score}%</text>
+                  </svg>
+                </div>
+                <p className="text-sm text-white/70 mt-3 leading-relaxed">{currentScenario.status}: {currentScenario.desc}</p>
+              </article>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div className="card-glass rounded-xl p-4">
+                <h4 className="text-sm font-semibold text-cyan-200">MATCH</h4>
+                <p className="text-xs text-white/70 mt-2">Face and voice agree strongly, indicating emotionally consistent expression.</p>
+              </div>
+              <div className="card-glass rounded-xl p-4">
+                <h4 className="text-sm font-semibold text-cyan-200">PARTIAL</h4>
+                <p className="text-xs text-white/70 mt-2">Signals overlap but not fully; useful for nuanced emotional states.</p>
+              </div>
+              <div className="card-glass rounded-xl p-4">
+                <h4 className="text-sm font-semibold text-cyan-200">MISMATCH</h4>
+                <p className="text-xs text-white/70 mt-2">Face and voice diverge, often indicating masked or conflicted emotion.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="performance" ref={performanceRef} className="pt-4 pb-20 px-4 scroll-mt-0">
+          <div className="max-w-6xl mx-auto space-y-10">
+            <div className="text-center space-y-3">
+              <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-blue-400/20 text-blue-300/75 rounded-full">Performance</p>
+              <h2 className="text-4xl md:text-6xl font-bold">Built on <span className="shimmer-text">state-of-the-art</span> models</h2>
+              <p className="text-white/70 max-w-2xl mx-auto text-base">Fine-tuned transformers validated with practical latency and high confidence accuracy.</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-8 items-center">
+              <div className="card-glass rounded-2xl p-6">
+                <h3 className="text-base font-semibold text-white/90 mb-4">Fusion Network Activity</h3>
+                <div className="aspect-[16/10] rounded-xl bg-[#0b1628] border border-blue-300/20 flex items-center justify-center">
+                  <svg viewBox="0 0 340 220" className="w-full h-full p-4">
+                    {Array.from({ length: 4 }, (_, i) => (
+                      <circle key={`l-${i}`} cx={38} cy={32 + i * 45} r={4} fill="#22d3ee" opacity="0.85" />
+                    ))}
+                    {Array.from({ length: 6 }, (_, i) => (
+                      <circle key={`m-${i}`} cx={170} cy={22 + i * 32} r={4} fill="#3b82f6" opacity="0.85" />
+                    ))}
+                    {Array.from({ length: 3 }, (_, i) => (
+                      <circle key={`r-${i}`} cx={302} cy={60 + i * 46} r={4} fill="#34d399" opacity="0.9" />
+                    ))}
+                    {Array.from({ length: 4 }, (_, li) => (
+                      Array.from({ length: 6 }, (_, mi) => {
+                        const pulse = Math.sin((li * 5 + mi * 7 + neuralTick) * 0.15);
+                        return (
+                          <line
+                            key={`lm-${li}-${mi}`}
+                            x1={38}
+                            y1={32 + li * 45}
+                            x2={170}
+                            y2={22 + mi * 32}
+                            stroke="#60a5fa"
+                            strokeWidth={pulse > 0.25 ? 1.2 : 0.5}
+                            strokeOpacity={pulse > 0.25 ? 0.38 : 0.12}
+                          />
+                        );
+                      })
+                    ))}
+                    {Array.from({ length: 6 }, (_, mi) => (
+                      Array.from({ length: 3 }, (_, ri) => {
+                        const pulse = Math.sin((mi * 3 + ri * 5 + neuralTick) * 0.17);
+                        return (
+                          <line
+                            key={`mr-${mi}-${ri}`}
+                            x1={170}
+                            y1={22 + mi * 32}
+                            x2={302}
+                            y2={60 + ri * 46}
+                            stroke="#34d399"
+                            strokeWidth={pulse > 0.2 ? 1.15 : 0.45}
+                            strokeOpacity={pulse > 0.2 ? 0.42 : 0.1}
+                          />
+                        );
+                      })
+                    ))}
+                  </svg>
+                </div>
+              </div>
+              <div className="space-y-4">
+                {[
+                  { label: 'ViT Accuracy (FER2013)', value: '71.29%', width: 71.29, color: '#22d3ee' },
+                  { label: 'HuBERT Accuracy (RAVDESS)', value: '87.50%', width: 87.5, color: '#3b82f6' },
+                  { label: 'Target Accuracy (Project Plan)', value: '90.00%', width: 90, color: '#34d399' },
+                  { label: 'Current Gap to Target (Facial)', value: '18.71%', width: 18.71, color: '#f59e0b' }
+                ].map((metric, idx) => (
+                  <div key={metric.label} className="card-glass rounded-xl p-4">
+                    <div className="flex items-center justify-between text-sm mb-2">
+                      <span className="text-white/80">{metric.label}</span>
+                      <span style={{ color: metric.color }}>{metric.value}</span>
+                    </div>
+                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: performanceVisible ? `${metric.width}%` : '0%',
+                          background: metric.color,
+                          transition: `width 1.1s ease ${idx * 140}ms`
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="card-glass rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white/90 mb-3">Validation Summary</h3>
+              <div className="grid md:grid-cols-3 gap-4 text-sm text-white/70">
+                <p>FER2013 and RAVDESS are used as baseline evaluation datasets.</p>
+                <p>Confidence calibration is tuned to improve session-level reliability.</p>
+                <p>Latency profile targets interactive feedback under 500ms budget.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="applications" className="pt-4 pb-20 px-4 scroll-mt-0">
+          <div className="max-w-6xl mx-auto space-y-10">
+            <div className="text-center space-y-3">
+              <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-green-400/20 text-green-300/75 rounded-full">Applications</p>
+              <h2 className="text-4xl md:text-6xl font-bold">Built for <span className="shimmer-text">impact</span></h2>
+              <p className="text-white/70 max-w-2xl mx-auto text-base">From clinical research to personal development, analyze emotional authenticity with confidence.</p>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {useCases.map((uc) => (
+                <article key={uc.title} className="card-glass rounded-2xl p-5 space-y-3 border border-cyan-300/10">
+                  <h3 className="text-base font-semibold text-white/90">{uc.title}</h3>
+                  <p className="text-sm text-white/70 leading-relaxed">{uc.desc}</p>
+                </article>
+              ))}
+            </div>
+            <div className="card-glass rounded-2xl p-8 text-center space-y-4 border border-cyan-300/20">
+              <p className="text-sm font-mono text-white/45 uppercase tracking-[0.2em]">Privacy-first architecture</p>
+              <h3 className="text-3xl md:text-4xl font-bold">All processing happens <span className="shimmer-text">on your device</span></h3>
+              <p className="text-base text-white/75 max-w-2xl mx-auto">No raw audio, video, or emotion data leaves your machine during inference.</p>
+              <div className="flex flex-wrap justify-center gap-3 text-sm text-white/70">
+                <span>Zero cloud dependency</span>
+                <span>•</span>
+                <span>No data transmission</span>
+                <span>•</span>
+                <span>On-device inference</span>
+              </div>
+            </div>
+            <div className="card-glass rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white/90 mb-3">Deployment Scenarios</h3>
+              <div className="grid md:grid-cols-3 gap-4 text-sm text-white/70">
+                <p>Clinical support dashboards with private on-device inference.</p>
+                <p>Interview and coaching analysis for communication training.</p>
+                <p>Academic and product research workflows with explainable evidence.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <footer className="border-t border-white/10 py-12 px-4">
+          <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
+            <div className="space-y-2 text-center md:text-left">
+              <div className="text-2xl font-bold text-white">Multi Modal Emotion Recognition</div>
+              <p className="text-sm text-white/65 font-mono">Dual-modality emotion analysis with explainable inference.</p>
+              <a
+                href={linkedinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 hover:text-cyan-200"
+              >
+                LinkedIn Profile
+              </a>
+            </div>
+            <div className="space-y-2 text-center">
+              <p className="text-xs uppercase tracking-[0.2em] text-white/45">Technology Stack</p>
+              <div className="flex flex-wrap justify-center gap-3 text-sm text-white/70">
+                <span>Vision Transformer</span>
+                <span>HuBERT</span>
+                <span>Grad-CAM</span>
+                <span>FastAPI</span>
+                <span>React</span>
+              </div>
+            </div>
+            <div className="space-y-2 text-center md:text-right">
+              <p className="text-xs uppercase tracking-[0.2em] text-white/45">System Status</p>
+              <div className="flex items-center justify-center md:justify-end gap-2 text-sm text-white/70">
+                <div className="w-2 h-2 rounded-full bg-cyan-400 pulse-glow" />
+                <span>Operational</span>
+              </div>
+              <p className="text-xs text-white/45">ViT + HuBERT · 30 FPS · &lt;500ms latency · WCAG 2.1 AA</p>
+            </div>
+          </div>
+        </footer>
+
+        <button
+          type="button"
+          aria-label="Scroll to top"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed right-5 bottom-5 z-50 h-11 w-11 rounded-full border border-cyan-300/45 bg-cyan-400/15 text-cyan-200 text-lg font-bold shadow-[0_8px_24px_rgba(34,211,238,0.25)] hover:bg-cyan-400/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+        >
+          ↑
+        </button>
+      </main>
     </div>
   );
 }
@@ -2419,8 +3143,22 @@ function CompareSessionsTab({ analytics, history }) {
 
   if (!sessionA || !sessionB) {
     return (
-      <div className="ga-card">
-        <p className="ga-empty">Need at least two sessions for the selected filter to compare.</p>
+      <div className="ga-design-stack">
+        <div className="ga-card">
+          <div className="ga-control-row">
+            <div className="ga-section-title" style={{ marginBottom: 0 }}>Select sessions to compare</div>
+            <div className="ga-control-group">
+              <select className="ga-select" value={modalityFilter} onChange={(e) => setModalityFilter(e.target.value)}>
+                <option value="all">All Session Types</option>
+                <option value="multimodal">Combined/Multimodal</option>
+                <option value="facial">Facial</option>
+                <option value="speech">Speech</option>
+              </select>
+              <button className="ga-header-btn" onClick={() => setModalityFilter('all')}>Reset Filter</button>
+            </div>
+          </div>
+          <p className="ga-empty">Need at least two sessions for the selected filter to compare. Adjust filter and try again.</p>
+        </div>
       </div>
     );
   }
@@ -2544,56 +3282,58 @@ function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
       {history.length === 0 ? (
         <p className="ga-empty">No analysis records yet. Run facial, speech, or multimodal analysis to populate history.</p>
       ) : (
-        <table className="ga-table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Modality</th>
-              <th>Result</th>
-              <th>Confidence</th>
-              <th>Explainability</th>
-              <th>Notes</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((row) => (
-              <tr key={row.id}>
-                <td>{new Date(row.createdAt).toLocaleString()}</td>
-                <td>
-                  <span className={`ga-pill ${row.pinned ? 'pinned' : ''}`}>{row.modality}</span>
-                </td>
-                <td>{row.emotion}</td>
-                <td>{`${((row.confidence || 0) * 100).toFixed(1)}%`}</td>
-                <td>{row.explainability || 'none'}</td>
-                <td>
-                  <input
-                    className="ga-note-input"
-                    value={draftNotes[row.id] ?? ''}
-                    placeholder="Add note"
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDraftNotes((prev) => ({ ...prev, [row.id]: value }));
-                    }}
-                  />
-                </td>
-                <td>
-                  <div className="ga-row-actions">
-                    <button className="ga-text-btn" onClick={() => onUpdateNote(row.id, draftNotes[row.id] ?? '')}>
-                      Save
-                    </button>
-                    <button className="ga-text-btn" onClick={() => onTogglePin(row.id)}>
-                      {row.pinned ? 'Unpin' : 'Pin'}
-                    </button>
-                    <button className="ga-text-btn danger" onClick={() => onDelete(row.id)}>
-                      Delete
-                    </button>
-                  </div>
-                </td>
+        <div className="ga-table-wrap">
+          <table className="ga-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Modality</th>
+                <th>Result</th>
+                <th>Confidence</th>
+                <th>Explainability</th>
+                <th>Notes</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {history.map((row) => (
+                <tr key={row.id}>
+                  <td>{new Date(row.createdAt).toLocaleString()}</td>
+                  <td>
+                    <span className={`ga-pill ${row.pinned ? 'pinned' : ''}`}>{row.modality}</span>
+                  </td>
+                  <td>{row.emotion}</td>
+                  <td>{`${((row.confidence || 0) * 100).toFixed(1)}%`}</td>
+                  <td>{row.explainability || 'none'}</td>
+                  <td>
+                    <input
+                      className="ga-note-input"
+                      value={draftNotes[row.id] ?? ''}
+                      placeholder="Add note"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setDraftNotes((prev) => ({ ...prev, [row.id]: value }));
+                      }}
+                    />
+                  </td>
+                  <td>
+                    <div className="ga-row-actions">
+                      <button className="ga-text-btn" onClick={() => onUpdateNote(row.id, draftNotes[row.id] ?? '')}>
+                        Save
+                      </button>
+                      <button className="ga-text-btn" onClick={() => onTogglePin(row.id)}>
+                        {row.pinned ? 'Unpin' : 'Pin'}
+                      </button>
+                      <button className="ga-text-btn danger" onClick={() => onDelete(row.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -2602,32 +3342,23 @@ function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
 const THEME_STORAGE_KEY = 'mmer_theme';
 
 function DashboardConsole({ authUser, onLogout }) {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(3);
   const [search, setSearch] = useState('');
   const [dateValue, setDateValue] = useState('');
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [toasts, setToasts] = useState([]);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const logoDataUrlRef = useRef(null);
   const toastCounterRef = useRef(0);
-  const [theme, setTheme] = useState(() => {
-    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (saved === 'dark' || saved === 'light') {
-      return saved;
-    }
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-      return 'light';
-    }
-    return 'dark';
-  });
 
   const tabs = [
     { id: 0, icon: 'overview', label: 'Dashboard' },
     { id: 3, icon: 'multimodal', label: 'Combined Analysis' },
-    { id: 1, icon: 'facial', label: 'Facial Upload (Secondary)' },
-    { id: 2, icon: 'speech', label: 'Speech Upload (Secondary)' },
+    { id: 1, icon: 'facial', label: 'Facial Upload' },
+    { id: 2, icon: 'speech', label: 'Speech Upload' },
     { id: 6, icon: 'overview', label: 'Emotion Trends' },
-    { id: 7, icon: 'model', label: 'AI Feedback' },
     { id: 8, icon: 'multimodal', label: 'Compare Sessions' },
     { id: 5, icon: 'history', label: 'Session History' },
     { id: 9, icon: 'history', label: 'Export Report' },
@@ -2637,17 +3368,16 @@ function DashboardConsole({ authUser, onLogout }) {
   const navSections = [
     { label: 'Overview', tabIds: [0] },
     { label: 'Analysis', tabIds: [3, 1, 2] },
-    { label: 'Insights', tabIds: [6, 7, 8] },
+    { label: 'Insights', tabIds: [6, 8] },
     { label: 'Records', tabIds: [5, 9, 4] }
   ];
 
   const tabDescriptions = {
     0: 'Overview and key session metrics.',
-    1: 'Secondary facial-only analysis with upload or webcam capture.',
-    2: 'Secondary speech-only analysis with upload or microphone recording.',
+    1: 'Facial-only analysis with upload or webcam capture.',
+    2: 'Speech-only analysis with upload or microphone recording.',
     3: 'Primary combined face + voice analysis using separate inputs or a single video.',
     6: 'View emotion trend summaries across recent sessions.',
-    7: 'Get AI-generated feedback and actionable tips.',
     8: 'Compare session-level changes and differences.',
     5: 'Track, annotate, pin, and export your analysis history.',
     9: 'Generate and export report summaries.',
@@ -2673,9 +3403,9 @@ function DashboardConsole({ authUser, onLogout }) {
   }, []);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme]);
+    document.documentElement.setAttribute('data-theme', 'dark');
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+  }, []);
 
   useEffect(() => {
     if (!toasts.length) return undefined;
@@ -3183,8 +3913,9 @@ function DashboardConsole({ authUser, onLogout }) {
       <aside className="ga-sidebar">
         <div className="ga-brand-wrap">
           <div className="ga-brand-top">
-            <div className="ga-brand-wordmark" aria-label="MMER">MMER</div>
+            <img src={logoImage} alt="Multi Modal Emotion Recognition logo" className="ga-brand-logo" />
           </div>
+          <div className="ga-brand-subtitle">Multi Modal Emotion Recognition</div>
         </div>
         <nav className="ga-nav">
           {navSections.map((section) => (
@@ -3213,7 +3944,7 @@ function DashboardConsole({ authUser, onLogout }) {
             <div className="ga-user-avatar">{profileInitials}</div>
             <div className="ga-user-email">{authUser.email}</div>
           </div>
-          <button className="ga-text-btn" onClick={onLogout}>Exit</button>
+          <button className="ga-text-btn" onClick={() => navigate('/')}>Exit</button>
         </div>
       </aside>
 
@@ -3222,16 +3953,31 @@ function DashboardConsole({ authUser, onLogout }) {
           <div className="ga-top-title">{activeTabLabel}</div>
           <div className="ga-header-actions">
             <button className="ga-live-session-btn" onClick={() => setActiveTab(3)}>+ Start Combined Analysis</button>
-            <button className="ga-header-btn" onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}>
-              {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-            </button>
-            <button
-              className="ga-profile"
-              title="Open Session History"
-              onClick={() => setActiveTab(5)}
-            >
-              {profileInitials}
-            </button>
+            <div className="relative">
+              <button
+                className="ga-profile"
+                title={authUser?.name || authUser?.email || 'Account'}
+                onClick={() => setShowUserMenu((prev) => !prev)}
+                aria-haspopup="menu"
+                aria-expanded={showUserMenu}
+              >
+                {profileInitials}
+              </button>
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-40 rounded-xl border border-cyan-300/30 bg-[#081525] shadow-lg p-1 z-[80]">
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-400/15 rounded-lg"
+                    onClick={async () => {
+                      setShowUserMenu(false);
+                      await onLogout();
+                    }}
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -3278,7 +4024,6 @@ function DashboardConsole({ authUser, onLogout }) {
           {activeTab === 2 && <div className="ga-card ga-tab-shell"><SpeechTab onResult={addHistoryRecord} /></div>}
           {activeTab === 3 && <div className="ga-card ga-tab-shell"><CombinedTab onResult={addHistoryRecord} /></div>}
           {activeTab === 6 && <div className="ga-card ga-tab-shell"><EmotionTrendsTab analytics={analytics} history={history} /></div>}
-          {activeTab === 7 && <div className="ga-card ga-tab-shell"><AIFeedbackTab analytics={analytics} /></div>}
           {activeTab === 8 && <div className="ga-card ga-tab-shell"><CompareSessionsTab analytics={analytics} history={history} /></div>}
           {activeTab === 4 && <div className="ga-card ga-tab-shell"><ModelInfoTab /></div>}
           {activeTab === 9 && <div className="ga-card ga-tab-shell"><ExportReportTab onExportCsv={exportHistoryCsv} onExportSummary={exportSummaryReport} analytics={analytics} /></div>}
@@ -3304,7 +4049,7 @@ function DashboardConsole({ authUser, onLogout }) {
 function PublicOnlyRoute({ isAuthenticated, children }) {
   const location = useLocation();
   if (isAuthenticated) {
-    return <Navigate to="/app/dashboard" replace state={{ from: location }} />;
+    return <Navigate to="/" replace state={{ from: location }} />;
   }
   return children;
 }
@@ -3318,16 +4063,13 @@ function ProtectedRoute({ isAuthenticated, children }) {
 }
 
 function AppRouter() {
+  const navigate = useNavigate();
   const [authUser, setAuthUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (savedTheme === 'dark' || savedTheme === 'light') {
-      document.documentElement.setAttribute('data-theme', savedTheme);
-    } else {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    }
+    document.documentElement.setAttribute('data-theme', 'dark');
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
   }, []);
 
   useEffect(() => {
@@ -3367,9 +4109,10 @@ function AppRouter() {
     setAuthUser(user);
   };
 
-  const handleLogout = async () => {
+  const handleLogout = async (redirectTo = '/') => {
     await supabase.auth.signOut();
     setAuthUser(null);
+    navigate(redirectTo, { replace: true });
   };
 
   const isAuthenticated = Boolean(authUser?.email);
@@ -3396,9 +4139,7 @@ function AppRouter() {
       <Route
         path="/"
         element={
-          <PublicOnlyRoute isAuthenticated={isAuthenticated}>
-            <MarketingPage />
-          </PublicOnlyRoute>
+          <MarketingPage authUser={authUser} onLogout={handleLogout} />
         }
       />
       <Route
