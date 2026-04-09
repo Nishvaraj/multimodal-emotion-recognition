@@ -79,6 +79,7 @@ npm start
 ### Backend
 - ENV
 - USE_GPU
+- PRELOAD_MODELS
 - FRONTEND_URL
 - CORS_ORIGINS
 
@@ -92,6 +93,7 @@ This repo includes `railway.json` with a production start command for FastAPI.
 2. Set these Railway environment variables:
   - `ENV=production`
   - `USE_GPU=false` (recommended unless you have a GPU-enabled setup)
+  - `PRELOAD_MODELS=false` (recommended on Railway for faster boot)
   - `FRONTEND_URL=https://<your-vercel-domain>`
   - Optional: `CORS_ORIGINS=https://<your-vercel-domain>,https://www.<your-vercel-domain>`
 3. Deploy and confirm health endpoint:

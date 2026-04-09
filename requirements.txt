@@ -16,7 +16,7 @@ librosa>=0.10.2
 soundfile>=0.12.1
 
 # Computer Vision
-opencv-python>=4.10.0
+opencv-python-headless>=4.10.0
 pillow>=10.4.0
 
 # Deep Learning

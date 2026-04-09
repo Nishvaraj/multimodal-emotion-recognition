@@ -14,6 +14,7 @@ import tempfile
 import os
 import sys
 import logging
+from threading import Lock
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -39,6 +40,7 @@ FRONTEND_URL = os.getenv(
 )
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "")
 USE_GPU = os.getenv("USE_GPU", "true").lower() == "true"
+PRELOAD_MODELS = os.getenv("PRELOAD_MODELS", "false").lower() == "true"
 
 app = FastAPI(title="Multi-Modal Emotion Recognition API", version="2.0.0")
 
@@ -71,6 +73,11 @@ vit_model = None
 facial_processor = None
 speech_model = None
 speech_processor = None
+facial_loaded = False
+speech_loaded = False
+
+_facial_model_lock = Lock()
+_speech_model_lock = Lock()
 
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -112,7 +119,6 @@ def _detect_primary_face(image: Image.Image):
 
     if faces is None or len(faces) == 0:
         return None
-
     return max(faces, key=lambda b: b[2] * b[3])
 
 
@@ -129,6 +135,7 @@ def _crop_face_with_margin(image_array: np.ndarray, face_box, margin_ratio: floa
 
     return image_array[y1:y2, x1:x2], (x1, y1, x2 - x1, y2 - y1)
 
+
 logger.info(f"Device: {DEVICE}")
 logger.info(f"Project root: {PROJECT_ROOT}")
 logger.info(f"Environment: {ENV}")
@@ -137,63 +144,100 @@ logger.info(f"Environment: {ENV}")
 
 def load_facial_model():
     """Load ViT model for facial emotion"""
-    global vit_model, facial_processor
-    try:
-        logger.info("Loading Facial Emotion Model (ViT)...")
-        facial_processor = AutoImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
-        vit_model = AutoModelForImageClassification.from_pretrained(
-            'google/vit-base-patch16-224-in21k',
-            num_labels=len(EMOTIONS_FACIAL),
-            ignore_mismatched_sizes=True
-        )
-        
-        if FACIAL_MODEL_PATH.exists():
-            checkpoint = torch.load(FACIAL_MODEL_PATH, map_location=DEVICE)
-            if 'model_state_dict' in checkpoint:
-                vit_model.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                vit_model.load_state_dict(checkpoint)
-            logger.info(f"✓ Loaded ViT checkpoint")
-        
-        vit_model = vit_model.to(DEVICE)
-        vit_model.eval()
-        logger.info("✓ Facial model ready")
+    global vit_model, facial_processor, facial_loaded
+    if vit_model is not None and facial_processor is not None:
+        facial_loaded = True
         return True
-    except Exception as e:
-        logger.error(f"❌ Error loading facial model: {e}")
-        return False
+
+    with _facial_model_lock:
+        if vit_model is not None and facial_processor is not None:
+            facial_loaded = True
+            return True
+
+        try:
+            logger.info("Loading Facial Emotion Model (ViT)...")
+            facial_processor = AutoImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
+            vit_model = AutoModelForImageClassification.from_pretrained(
+                'google/vit-base-patch16-224-in21k',
+                num_labels=len(EMOTIONS_FACIAL),
+                ignore_mismatched_sizes=True
+            )
+
+            if FACIAL_MODEL_PATH.exists():
+                checkpoint = torch.load(FACIAL_MODEL_PATH, map_location=DEVICE)
+                if 'model_state_dict' in checkpoint:
+                    vit_model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    vit_model.load_state_dict(checkpoint)
+                logger.info("✓ Loaded ViT checkpoint")
+
+            vit_model = vit_model.to(DEVICE)
+            vit_model.eval()
+            facial_loaded = True
+            logger.info("✓ Facial model ready")
+            return True
+        except Exception as e:
+            facial_loaded = False
+            logger.error(f"❌ Error loading facial model: {e}")
+            return False
+
 
 def load_speech_model():
     """Load HuBERT model for speech emotion"""
-    global speech_model, speech_processor
-    try:
-        logger.info("Loading Speech Emotion Model (HuBERT)...")
-        speech_processor = AutoFeatureExtractor.from_pretrained('facebook/hubert-large-ls960-ft')
-        speech_model = AutoModelForAudioClassification.from_pretrained(
-            'facebook/hubert-large-ls960-ft',
-            num_labels=len(EMOTIONS_SPEECH),
-            ignore_mismatched_sizes=True
-        )
-        
-        if SPEECH_MODEL_PATH.exists():
-            checkpoint = torch.load(SPEECH_MODEL_PATH, map_location=DEVICE)
-            if 'model_state_dict' in checkpoint:
-                speech_model.load_state_dict(checkpoint['model_state_dict'])
-            else:
-                speech_model.load_state_dict(checkpoint)
-            logger.info(f"✓ Loaded HuBERT checkpoint")
-        
-        speech_model = speech_model.to(DEVICE)
-        speech_model.eval()
-        logger.info("✓ Speech model ready")
+    global speech_model, speech_processor, speech_loaded
+    if speech_model is not None and speech_processor is not None:
+        speech_loaded = True
         return True
-    except Exception as e:
-        logger.error(f"❌ Error loading speech model: {e}")
-        return False
 
-# Load on startup
-facial_loaded = load_facial_model()
-speech_loaded = load_speech_model()
+    with _speech_model_lock:
+        if speech_model is not None and speech_processor is not None:
+            speech_loaded = True
+            return True
+
+        try:
+            logger.info("Loading Speech Emotion Model (HuBERT)...")
+            speech_processor = AutoFeatureExtractor.from_pretrained('facebook/hubert-large-ls960-ft')
+            speech_model = AutoModelForAudioClassification.from_pretrained(
+                'facebook/hubert-large-ls960-ft',
+                num_labels=len(EMOTIONS_SPEECH),
+                ignore_mismatched_sizes=True
+            )
+
+            if SPEECH_MODEL_PATH.exists():
+                checkpoint = torch.load(SPEECH_MODEL_PATH, map_location=DEVICE)
+                if 'model_state_dict' in checkpoint:
+                    speech_model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    speech_model.load_state_dict(checkpoint)
+                logger.info("✓ Loaded HuBERT checkpoint")
+
+            speech_model = speech_model.to(DEVICE)
+            speech_model.eval()
+            speech_loaded = True
+            logger.info("✓ Speech model ready")
+            return True
+        except Exception as e:
+            speech_loaded = False
+            logger.error(f"❌ Error loading speech model: {e}")
+            return False
+
+
+def ensure_facial_model_loaded() -> bool:
+    if vit_model is not None and facial_processor is not None:
+        return True
+    return load_facial_model()
+
+
+def ensure_speech_model_loaded() -> bool:
+    if speech_model is not None and speech_processor is not None:
+        return True
+    return load_speech_model()
+
+
+# Optional eager loading for environments that prefer warm startup.
+if PRELOAD_MODELS:
+    facial_loaded = load_facial_model()
+    speech_loaded = load_speech_model()
 
 # ========== VIDEO PROCESSOR ==========
 
@@ -234,7 +278,7 @@ class VideoProcessor:
 def predict_facial_emotion(image: Image.Image, generate_explainability: bool = False):
     """Predict emotion from image"""
     try:
-        if vit_model is None:
+        if not ensure_facial_model_loaded():
             return None
         
         input_array = np.array(image)
@@ -342,7 +386,7 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
 def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explainability: bool = False):
     """Predict emotion from audio"""
     try:
-        if speech_model is None:
+        if not ensure_speech_model_loaded():
             return None
         
         if sr != 16000:
@@ -402,10 +446,13 @@ async def root():
 
 @app.get("/health")
 async def health():
+    facial_ready = vit_model is not None and facial_processor is not None
+    speech_ready = speech_model is not None and speech_processor is not None
     return {
         "status": "healthy",
-        "facial_model": facial_loaded,
-        "speech_model": speech_loaded,
+        "facial_model": facial_ready,
+        "speech_model": speech_ready,
+        "lazy_loading": not PRELOAD_MODELS,
         "device": str(DEVICE)
     }
 
@@ -707,8 +754,11 @@ async def get_speech_emotions():
 
 @app.get("/api/models/status")
 async def get_models_status():
+    facial_ready = vit_model is not None and facial_processor is not None
+    speech_ready = speech_model is not None and speech_processor is not None
     return {
-        "facial": {"loaded": facial_loaded, "accuracy": 0.7129, "emotions": len(EMOTIONS_FACIAL)},
-        "speech": {"loaded": speech_loaded, "accuracy": 0.8750, "emotions": len(EMOTIONS_SPEECH)},
+        "facial": {"loaded": facial_ready, "accuracy": 0.7129, "emotions": len(EMOTIONS_FACIAL)},
+        "speech": {"loaded": speech_ready, "accuracy": 0.8750, "emotions": len(EMOTIONS_SPEECH)},
+        "lazy_loading": not PRELOAD_MODELS,
         "device": str(DEVICE)
     }
