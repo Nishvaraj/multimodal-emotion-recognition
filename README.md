@@ -79,7 +79,41 @@ npm start
 ### Backend
 - ENV
 - USE_GPU
-- REACT_APP_VERCEL_URL
+- FRONTEND_URL
+- CORS_ORIGINS
+
+## Deployment (Railway + Vercel)
+
+### 1. Deploy backend to Railway
+
+This repo includes `railway.json` with a production start command for FastAPI.
+
+1. Create a new Railway project from this repository.
+2. Set these Railway environment variables:
+  - `ENV=production`
+  - `USE_GPU=false` (recommended unless you have a GPU-enabled setup)
+  - `FRONTEND_URL=https://<your-vercel-domain>`
+  - Optional: `CORS_ORIGINS=https://<your-vercel-domain>,https://www.<your-vercel-domain>`
+3. Deploy and confirm health endpoint:
+  - `https://<your-railway-domain>/health`
+
+### 2. Deploy frontend to Vercel
+
+This repo includes `frontend/vercel.json` for static React deployment.
+
+1. Import this repository in Vercel.
+2. Set **Root Directory** to `frontend`.
+3. Set frontend environment variables in Vercel:
+  - `REACT_APP_API_BASE=https://<your-railway-domain>`
+  - `REACT_APP_SUPABASE_URL=<your-supabase-url>`
+  - `REACT_APP_SUPABASE_ANON_KEY=<your-supabase-anon-key>`
+4. Deploy and open the Vercel URL.
+
+### 3. Final CORS check
+
+After Vercel domain is live, ensure Railway backend allows it:
+- Preferred: set `CORS_ORIGINS` to an explicit comma-separated allowlist.
+- Fallback: set `FRONTEND_URL` to your primary Vercel domain.
 
 ## Project Structure
 

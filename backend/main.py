@@ -33,17 +33,21 @@ sys.path.insert(0, str(Path(__file__).parent))
 from services.explainability import generate_grad_cam, generate_audio_saliency, create_combined_visualization
 
 ENV = os.getenv("ENV", "development")
-FRONTEND_URL = os.getenv("REACT_APP_VERCEL_URL", "http://localhost:3000")
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    os.getenv("REACT_APP_VERCEL_URL", "http://localhost:3000")
+)
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "")
 USE_GPU = os.getenv("USE_GPU", "true").lower() == "true"
 
 app = FastAPI(title="Multi-Modal Emotion Recognition API", version="2.0.0")
 
 # Configure CORS based on environment
 if ENV == "production":
-    allowed_origins = [
-        FRONTEND_URL,
-        "https://yourfrontend.vercel.app",  # Update with your Vercel URL
-    ]
+    if CORS_ORIGINS.strip():
+        allowed_origins = [origin.strip() for origin in CORS_ORIGINS.split(",") if origin.strip()]
+    else:
+        allowed_origins = [FRONTEND_URL]
 else:
     allowed_origins = ["*"]
 
