@@ -304,7 +304,7 @@ function FacialTab({ onResult }) {
       formData.append('file', imageFile);
       
       const explainParam = showGradCAM ? '?explain=true' : '';
-      const response = await axios.post(`${API_BASE}/api/predict/facial${explainParam}`, formData);
+      const response = await axios.post(`${API_BASE}/api/predict/facial${explainParam}`, formData, { timeout: 120000 });
       if (response.data.success) {
         setEmotion(response.data.emotion);
         setConfidence(response.data.confidence);
@@ -623,7 +623,7 @@ function SpeechTab({ onResult }) {
       formData.append('file', audioFile);
       
       const explainParam = showSaliency ? '?explain=true' : '';
-      const response = await axios.post(`${API_BASE}/api/predict/speech${explainParam}`, formData);
+      const response = await axios.post(`${API_BASE}/api/predict/speech${explainParam}`, formData, { timeout: 120000 });
       if (response.data.success) {
         setEmotion(response.data.emotion);
         setConfidence(response.data.confidence);
@@ -1175,7 +1175,7 @@ function CombinedTab({ onResult }) {
       formData.append('audio_file', audioFile);
       
       const explainParam = showExplainability ? '?explain=true' : '';
-      const response = await axios.post(`${API_BASE}/api/predict/combined${explainParam}`, formData);
+      const response = await axios.post(`${API_BASE}/api/predict/combined${explainParam}`, formData, { timeout: 120000 });
       if (response.data.success) {
         setFacialEmotion(response.data.facial_emotion.emotion);
         setSpeechEmotion(response.data.speech_emotion.emotion);
@@ -1247,7 +1247,7 @@ function CombinedTab({ onResult }) {
       const formData = new FormData();
       formData.append('file', videoFile, videoFile.name || `video-${Date.now()}.webm`);
       const explainParam = showExplainability ? '?explain=true' : '';
-      const response = await axios.post(`${API_BASE}/api/predict/video${explainParam}`, formData);
+      const response = await axios.post(`${API_BASE}/api/predict/video${explainParam}`, formData, { timeout: 120000 });
       if (response.data.success) {
         const face = response.data.facial_emotion?.emotion || 'unknown';
         const speech = response.data.speech_emotion?.emotion || 'unknown';
