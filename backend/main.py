@@ -10,6 +10,7 @@ from PIL import Image
 from io import BytesIO
 from pathlib import Path
 from transformers import AutoImageProcessor, AutoModelForImageClassification, AutoFeatureExtractor, AutoModelForAudioClassification
+from huggingface_hub import hf_hub_download
 import tempfile
 import os
 import sys
@@ -79,10 +80,18 @@ speech_loaded = False
 _facial_model_lock = Lock()
 _speech_model_lock = Lock()
 
-# Paths
-PROJECT_ROOT = Path(__file__).parent.parent
-FACIAL_MODEL_PATH = PROJECT_ROOT / 'models' / 'vit_emotion_model.pt'
-SPEECH_MODEL_PATH = PROJECT_ROOT / 'models' / 'hubert_emotion_model.pt'
+# Paths — download from HuggingFace Hub
+logger.info("Resolving model paths from HuggingFace Hub...")
+FACIAL_MODEL_PATH = hf_hub_download(
+    repo_id="Nishvaraj/emotion-models",
+    filename="vit_emotion_model.pt"
+)
+SPEECH_MODEL_PATH = hf_hub_download(
+    repo_id="Nishvaraj/emotion-models",
+    filename="hubert_emotion_model.pt"
+)
+logger.info(f"Facial model path: {FACIAL_MODEL_PATH}")
+logger.info(f"Speech model path: {SPEECH_MODEL_PATH}")
 
 
 def _upload_suffix(filename: str, default_suffix: str) -> str:
@@ -137,7 +146,6 @@ def _crop_face_with_margin(image_array: np.ndarray, face_box, margin_ratio: floa
 
 
 logger.info(f"Device: {DEVICE}")
-logger.info(f"Project root: {PROJECT_ROOT}")
 logger.info(f"Environment: {ENV}")
 
 # ========== MODEL LOADING ==========
@@ -163,13 +171,12 @@ def load_facial_model():
                 ignore_mismatched_sizes=True
             )
 
-            if FACIAL_MODEL_PATH.exists():
-                checkpoint = torch.load(FACIAL_MODEL_PATH, map_location=DEVICE)
-                if 'model_state_dict' in checkpoint:
-                    vit_model.load_state_dict(checkpoint['model_state_dict'])
-                else:
-                    vit_model.load_state_dict(checkpoint)
-                logger.info("✓ Loaded ViT checkpoint")
+            checkpoint = torch.load(FACIAL_MODEL_PATH, map_location=DEVICE)
+            if 'model_state_dict' in checkpoint:
+                vit_model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                vit_model.load_state_dict(checkpoint)
+            logger.info("✓ Loaded ViT checkpoint")
 
             vit_model = vit_model.to(DEVICE)
             vit_model.eval()
@@ -203,13 +210,12 @@ def load_speech_model():
                 ignore_mismatched_sizes=True
             )
 
-            if SPEECH_MODEL_PATH.exists():
-                checkpoint = torch.load(SPEECH_MODEL_PATH, map_location=DEVICE)
-                if 'model_state_dict' in checkpoint:
-                    speech_model.load_state_dict(checkpoint['model_state_dict'])
-                else:
-                    speech_model.load_state_dict(checkpoint)
-                logger.info("✓ Loaded HuBERT checkpoint")
+            checkpoint = torch.load(SPEECH_MODEL_PATH, map_location=DEVICE)
+            if 'model_state_dict' in checkpoint:
+                speech_model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                speech_model.load_state_dict(checkpoint)
+            logger.info("✓ Loaded HuBERT checkpoint")
 
             speech_model = speech_model.to(DEVICE)
             speech_model.eval()
@@ -268,7 +274,6 @@ class VideoProcessor:
         
         cap.release()
         
-        # Extract audio
         audio, sr = librosa.load(video_path, sr=16000, mono=True)
         
         return frames, audio, sr, fps
@@ -292,7 +297,6 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
             if face_crop.size > 0:
                 model_image = Image.fromarray(face_crop)
 
-        # Always return an annotated face-detection image.
         annotated = input_array.copy()
         if face_box is not None:
             x, y, w, h = [int(v) for v in face_box]
@@ -327,7 +331,6 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
             x, y, w, h = [int(v) for v in face_box]
             result["face_box"] = {"x": x, "y": y, "width": w, "height": h}
         
-        # Generate Grad-CAM if requested
         if generate_explainability:
             result["explainability_status"] = {
                 "requested": True,
@@ -346,7 +349,6 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
                 if original_base64:
                     result["original_image"] = original_base64
                 if heatmap_base64:
-                    # If a face was detected, project the face-level Grad-CAM back onto the full image.
                     if expanded_box is not None:
                         try:
                             hx, hy, hw, hh = [int(v) for v in expanded_box]
@@ -405,7 +407,6 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
             "probabilities": {e: float(p) for e, p in zip(EMOTIONS_SPEECH, probs)}
         }
         
-        # Generate audio saliency if requested
         if generate_explainability:
             result["explainability_status"] = {
                 "requested": True,
@@ -495,12 +496,10 @@ async def predict_speech(file: UploadFile = File(...), explain: bool = False):
 async def predict_combined(image_file: UploadFile = File(...), audio_file: UploadFile = File(...), explain: bool = False):
     """Predict emotions from both image and audio, then compare results"""
     try:
-        # Process image
         image_contents = await image_file.read()
         image = Image.open(BytesIO(image_contents)).convert('RGB')
         facial_result = predict_facial_emotion(image, generate_explainability=explain)
         
-        # Process audio
         audio_contents = await audio_file.read()
         audio_suffix = _upload_suffix(audio_file.filename, '.wav')
         with tempfile.NamedTemporaryFile(suffix=audio_suffix, delete=False) as tmp:
@@ -513,14 +512,12 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
         finally:
             os.unlink(tmp_path)
         
-        # Extract emotions
         facial_emotion = facial_result["emotion"] if facial_result else None
         facial_confidence = facial_result["confidence"] if facial_result else 0.0
         
         speech_emotion = speech_result["emotion"] if speech_result else None
         speech_confidence = speech_result["confidence"] if speech_result else 0.0
         
-        # Compare emotions (concordance)
         concordance = None
         if facial_emotion and speech_emotion:
             if facial_emotion == speech_emotion:
@@ -528,12 +525,10 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
             else:
                 concordance = "MISMATCH"
         
-        # Determine combined emotion (weighted by confidence)
         combined_emotion = None
         combined_confidence = 0.0
         
         if facial_emotion and speech_emotion:
-            # Weight by confidence scores
             if facial_confidence > speech_confidence:
                 combined_emotion = facial_emotion
                 combined_confidence = facial_confidence
@@ -571,7 +566,6 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
             }
         }
         
-        # Add explainability if requested (allow partial outputs + status details)
         if explain:
             explainability = {}
             errors = []
@@ -626,18 +620,15 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
             tmp_path = tmp.name
         
         try:
-            # Extract frames and audio
             processor = VideoProcessor()
             frames, audio, sr, fps = processor.extract_frames_and_audio(tmp_path, fps_sample=5)
             
-            # Predict facial emotions from first 10 frames
             facial_results = []
             for frame in frames[:10]:
                 result = predict_facial_emotion(frame)
                 if result:
                     facial_results.append(result)
             
-            # Aggregate facial results
             if facial_results:
                 facial_emotions = [r["emotion"] for r in facial_results]
                 facial_confidence = np.mean([r["confidence"] for r in facial_results])
@@ -650,7 +641,6 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
                 facial_confidence = 0.0
                 facial_probs = {e: 0.0 for e in EMOTIONS_FACIAL}
             
-            # Predict speech emotion
             speech_result = predict_speech_emotion(audio, sr)
             
             response = {
@@ -676,16 +666,8 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
                 explainability = {}
                 errors = []
 
-                facial_exp_status = {
-                    "requested": True,
-                    "generated": False,
-                    "error": None
-                }
-                speech_exp_status = {
-                    "requested": True,
-                    "generated": False,
-                    "error": None
-                }
+                facial_exp_status = {"requested": True, "generated": False, "error": None}
+                speech_exp_status = {"requested": True, "generated": False, "error": None}
 
                 if frames and facial_emotion != "unknown":
                     try:
