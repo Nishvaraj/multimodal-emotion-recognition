@@ -172,7 +172,10 @@ def _detect_primary_face(image: Image.Image):
             boxes, probs, points = MTCNN_DETECTOR.detect(image, landmarks=True)
             if boxes is not None and len(boxes) > 0:
                 best_idx = int(np.argmax(probs)) if probs is not None else 0
-                return tuple(int(v) for v in boxes[best_idx]), (points[best_idx] if points is not None else None)
+                x1, y1, x2, y2 = boxes[best_idx]
+                # Convert from [x1,y1,x2,y2] to [x,y,w,h]
+                x, y, w, h = int(x1), int(y1), int(x2 - x1), int(y2 - y1)
+                return (x, y, w, h), (points[best_idx] if points is not None else None)
         except Exception as e:
             logger.debug(f"MTCNN face detection fallback: {e}")
 
