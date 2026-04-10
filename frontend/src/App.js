@@ -22,9 +22,15 @@ const EMOTION_EMOJIS = {
 const EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
 const EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised'];
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000';
+const MIN_AUDIO_SECONDS = 5;
+const RECOMMENDED_AUDIO_SECONDS = 10;
 
 const AUDIO_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
 const VIDEO_MIME_CANDIDATES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+const BTN_PRIMARY = 'bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg';
+const BTN_SUCCESS = 'bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg font-medium transition-colors';
+const BTN_DANGER = 'bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-medium transition-colors';
+const BTN_NEUTRAL = 'bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg font-medium transition-colors';
 
 function pickSupportedMimeType(candidates) {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
@@ -40,6 +46,32 @@ function getFileExtensionForMime(mimeType, fallback) {
   if (mime.includes('wav')) return 'wav';
   if (mime.includes('webm')) return 'webm';
   return fallback;
+}
+
+function getAudioDurationSeconds(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      reject(new Error('No audio file provided'));
+      return;
+    }
+
+    const audio = document.createElement('audio');
+    const objectUrl = URL.createObjectURL(file);
+    audio.preload = 'metadata';
+    audio.onloadedmetadata = () => {
+      URL.revokeObjectURL(objectUrl);
+      if (Number.isFinite(audio.duration)) {
+        resolve(audio.duration);
+      } else {
+        reject(new Error('Could not determine audio duration'));
+      }
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Could not read audio duration'));
+    };
+    audio.src = objectUrl;
+  });
 }
 
 function getApiErrorMessage(err, fallback = 'Request failed') {
@@ -66,6 +98,10 @@ function getConcordanceScore(row) {
   }
   const confidence = Number(row?.confidence || 0);
   return Math.max(0, Math.min(100, confidence * 100));
+}
+
+function getConcordanceScoreFromLabel(label) {
+  return CONCORDANCE_SCORE_MAP[String(label || '').toUpperCase()] || 0;
 }
 
 function splitMultimodalEmotions(row) {
@@ -352,7 +388,7 @@ function FacialTab({ onResult }) {
                 <p className="text-slate-400 mb-4">Click to Access Webcam</p>
                 <button
                   onClick={startCamera}
-                  className="bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
+                  className={BTN_PRIMARY}
                 >
                   Start Webcam
                 </button>
@@ -383,13 +419,13 @@ function FacialTab({ onResult }) {
                 <div className="flex gap-2">
                   <button
                     onClick={capturePhoto}
-                    className="flex-1 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                    className={`flex-1 ${BTN_SUCCESS}`}
                   >
                     Capture
                   </button>
                   <button
                     onClick={stopCamera}
-                    className="flex-1 bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                    className={`flex-1 ${BTN_DANGER}`}
                   >
                     Cancel
                   </button>
@@ -502,7 +538,7 @@ function FacialTab({ onResult }) {
             <div className="p-4">
               <p className="text-slate-400 text-sm mb-3">
                 {faceDetected
-                  ? 'Yellow box marks detected face before emotion reasoning.'
+                  ? 'Detected face is shown with a tighter box before explainability is computed.'
                   : 'No face box was detected; model used the full image.'}
               </p>
               <img src={annotatedImage ? `data:image/png;base64,${annotatedImage}` : imagePreview} alt="Annotated" className="w-full rounded-lg" />
@@ -514,11 +550,11 @@ function FacialTab({ onResult }) {
         {gradCam && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
-              <span className="text-blue-300 text-sm font-medium">Grad-CAM Heatmap</span>
+              <span className="text-blue-300 text-sm font-medium">Facial Grad-CAM Heatmap</span>
             </div>
             <div className="p-4">
               <p className="text-slate-400 text-sm mb-3">
-                Red regions = areas the model focused on | Blue regions = less important
+                Heat map shows where the facial model focused most. Red/orange areas had the strongest influence.
               </p>
               <img
                 src={`data:image/png;base64,${gradCam}`}
@@ -549,6 +585,7 @@ function SpeechTab({ onResult }) {
   const [showSaliency, setShowSaliency] = useState(false);
   const [saliency, setSaliency] = useState(null);
   const [waveform, setWaveform] = useState(null);
+  const recordingStartedAtRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -563,16 +600,26 @@ function SpeechTab({ onResult }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       chunksRef.current = [];
+      recordingStartedAtRef.current = Date.now();
 
       const mimeType = pickSupportedMimeType(AUDIO_MIME_CANDIDATES);
       const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
       mediaRecorder.onstop = () => {
+        const recordingDuration = recordingStartedAtRef.current ? (Date.now() - recordingStartedAtRef.current) / 1000 : 0;
         const recorderType = mediaRecorder.mimeType || mimeType || 'audio/webm';
         const audioBlob = new Blob(chunksRef.current, { type: recorderType });
         const ext = getFileExtensionForMime(recorderType, 'webm');
         const recordedFile = new File([audioBlob], `recorded-audio-${Date.now()}.${ext}`, { type: recorderType });
+        if (recordingDuration < MIN_AUDIO_SECONDS) {
+          setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
+          setAudioFile(null);
+          setEmotion(null);
+          setSaliency(null);
+          setWaveform(null);
+          return;
+        }
         if (audioPreviewUrl) {
           URL.revokeObjectURL(audioPreviewUrl);
         }
@@ -595,9 +642,29 @@ function SpeechTab({ onResult }) {
     }
   };
 
-  const handleAudioSelect = (e) => {
+  const handleAudioSelect = async (e) => {
     const file = e.target.files[0];
     if (file) {
+      try {
+        const durationSeconds = await getAudioDurationSeconds(file);
+        if (durationSeconds < MIN_AUDIO_SECONDS) {
+          setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
+          if (audioPreviewUrl) {
+            URL.revokeObjectURL(audioPreviewUrl);
+          }
+          setAudioPreviewUrl(null);
+          setAudioFile(null);
+          setEmotion(null);
+          setSaliency(null);
+          setWaveform(null);
+          e.target.value = '';
+          return;
+        }
+      } catch (durationErr) {
+        setError('Could not read audio duration. Please upload a different file.');
+        e.target.value = '';
+        return;
+      }
       if (audioPreviewUrl) {
         URL.revokeObjectURL(audioPreviewUrl);
       }
@@ -672,7 +739,7 @@ function SpeechTab({ onResult }) {
                 <p className="text-slate-400 mb-4">Click to Record Audio</p>
                 <button
                   onClick={startRecording}
-                  className="bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
+                  className={BTN_PRIMARY}
                 >
                   Start Recording
                 </button>
@@ -712,7 +779,7 @@ function SpeechTab({ onResult }) {
                 </div>
                 <button
                   onClick={stopRecording}
-                  className="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                  className={BTN_DANGER}
                 >
                   Stop Recording
                 </button>
@@ -742,6 +809,9 @@ function SpeechTab({ onResult }) {
                 </label>
               </div>
             )}
+            <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100/80">
+              Tip: use audio of at least {RECOMMENDED_AUDIO_SECONDS} seconds for better feedback. Clips under {MIN_AUDIO_SECONDS} seconds are rejected.
+            </div>
           </div>
         </div>
 
@@ -871,6 +941,7 @@ function CombinedTab({ onResult }) {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [audioFile, setAudioFile] = useState(null);
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
   const [videoFile, setVideoFile] = useState(null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
 
@@ -894,6 +965,7 @@ function CombinedTab({ onResult }) {
   const [facialEmotion, setFacialEmotion] = useState(null);
   const [speechEmotion, setSpeechEmotion] = useState(null);
   const [concordance, setConcordance] = useState(null);
+  const [concordanceScore, setConcordanceScore] = useState(null);
   const [facialProbs, setFacialProbs] = useState(null);
   const [speechProbs, setSpeechProbs] = useState(null);
   const [videoResult, setVideoResult] = useState(null);
@@ -906,11 +978,15 @@ function CombinedTab({ onResult }) {
   const [annotatedFace, setAnnotatedFace] = useState(null);
   const [faceDetected, setFaceDetected] = useState(false);
   const [explainabilityStatus, setExplainabilityStatus] = useState(null);
+  const audioRecordingStartedAtRef = useRef(null);
 
   useEffect(() => {
     return () => {
       if (videoPreviewUrl) {
         URL.revokeObjectURL(videoPreviewUrl);
+      }
+      if (audioPreviewUrl) {
+        URL.revokeObjectURL(audioPreviewUrl);
       }
       if (imageCameraStreamRef.current) {
         imageCameraStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -922,7 +998,7 @@ function CombinedTab({ onResult }) {
         videoStreamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-  }, [videoPreviewUrl]);
+  }, [videoPreviewUrl, audioPreviewUrl]);
 
   useEffect(() => {
     if (isCameraOn && imageVideoRef.current && imageCameraStreamRef.current) {
@@ -940,6 +1016,7 @@ function CombinedTab({ onResult }) {
     setFacialEmotion(null);
     setSpeechEmotion(null);
     setConcordance(null);
+    setConcordanceScore(null);
     setFacialProbs(null);
     setSpeechProbs(null);
     setVideoResult(null);
@@ -970,10 +1047,28 @@ function CombinedTab({ onResult }) {
     }
   };
 
-  const handleAudioSelect = (e) => {
+  const handleAudioSelect = async (e) => {
     const file = e.target.files[0];
     if (file) {
+      try {
+        const durationSeconds = await getAudioDurationSeconds(file);
+        if (durationSeconds < MIN_AUDIO_SECONDS) {
+          setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
+          setAudioFile(null);
+          resetResults();
+          e.target.value = '';
+          return;
+        }
+      } catch (durationErr) {
+        setError('Could not read audio duration. Please upload a different file.');
+        e.target.value = '';
+        return;
+      }
+      if (audioPreviewUrl) {
+        URL.revokeObjectURL(audioPreviewUrl);
+      }
       setAudioFile(file);
+      setAudioPreviewUrl(URL.createObjectURL(file));
       resetResults();
     }
   };
@@ -1023,16 +1118,28 @@ function CombinedTab({ onResult }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
       audioChunksRef.current = [];
+      audioRecordingStartedAtRef.current = Date.now();
       const mimeType = pickSupportedMimeType(AUDIO_MIME_CANDIDATES);
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       audioRecorderRef.current = recorder;
       recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       recorder.onstop = () => {
+        const recordingDuration = audioRecordingStartedAtRef.current ? (Date.now() - audioRecordingStartedAtRef.current) / 1000 : 0;
+        if (recordingDuration < MIN_AUDIO_SECONDS) {
+          setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
+          setAudioFile(null);
+          resetResults();
+          return;
+        }
+        if (audioPreviewUrl) {
+          URL.revokeObjectURL(audioPreviewUrl);
+        }
         const recorderType = recorder.mimeType || mimeType || audioChunksRef.current[0]?.type || 'audio/webm';
         const blob = new Blob(audioChunksRef.current, { type: recorderType });
         const ext = getFileExtensionForMime(recorderType, 'webm');
         const recorded = new File([blob], `recorded-audio-${Date.now()}.${ext}`, { type: recorderType });
         setAudioFile(recorded);
+        setAudioPreviewUrl(URL.createObjectURL(recorded));
         resetResults();
       };
       recorder.start();
@@ -1180,6 +1287,9 @@ function CombinedTab({ onResult }) {
         setFacialEmotion(response.data.facial_emotion.emotion);
         setSpeechEmotion(response.data.speech_emotion.emotion);
         setConcordance(response.data.concordance);
+        setConcordanceScore(Number.isFinite(response.data.concordance_score)
+          ? response.data.concordance_score
+          : getConcordanceScoreFromLabel(response.data.concordance));
         setFacialProbs(response.data.facial_emotion.probabilities);
         setSpeechProbs(response.data.speech_emotion.probabilities);
         setAnnotatedFace(response.data.facial_emotion.annotated_image || null);
@@ -1251,12 +1361,15 @@ function CombinedTab({ onResult }) {
       if (response.data.success) {
         const face = response.data.facial_emotion?.emotion || 'unknown';
         const speech = response.data.speech_emotion?.emotion || 'unknown';
-        const videoConcordance = face === speech ? 'MATCH' : 'MISMATCH';
+        const videoConcordance = response.data.concordance || ((face === 'unknown' || speech === 'unknown') ? 'UNKNOWN' : (face === speech ? 'MATCH' : 'MISMATCH'));
 
         setVideoResult(response.data);
         setFacialEmotion(face);
         setSpeechEmotion(speech);
         setConcordance(videoConcordance);
+        setConcordanceScore(Number.isFinite(response.data.concordance_score)
+          ? response.data.concordance_score
+          : getConcordanceScoreFromLabel(videoConcordance));
         setFacialProbs(response.data.facial_emotion?.probabilities || null);
         setSpeechProbs(response.data.speech_emotion?.probabilities || null);
 
@@ -1357,7 +1470,7 @@ function CombinedTab({ onResult }) {
                 <button
                   type="button"
                   onClick={startImageCamera}
-                  className="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg"
+                  className={`w-full ${BTN_PRIMARY}`}
                 >
                   Capture with Webcam
                 </button>
@@ -1369,8 +1482,8 @@ function CombinedTab({ onResult }) {
                 <video ref={imageVideoRef} autoPlay playsInline className="w-full rounded-lg mb-3" />
                 <canvas ref={imageCanvasRef} width="640" height="480" className="hidden" />
                 <div className="flex gap-2">
-                  <button type="button" onClick={captureImage} className="flex-1 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg">Capture</button>
-                  <button type="button" onClick={stopImageCamera} className="flex-1 bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg">Cancel</button>
+                  <button type="button" onClick={captureImage} className={`flex-1 ${BTN_SUCCESS}`}>Capture</button>
+                  <button type="button" onClick={stopImageCamera} className={`flex-1 ${BTN_DANGER}`}>Cancel</button>
                 </div>
               </div>
             )}
@@ -1417,17 +1530,20 @@ function CombinedTab({ onResult }) {
                 <button
                   type="button"
                   onClick={startAudioRecording}
-                  className="w-full bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg"
+                  className={`w-full ${BTN_PRIMARY}`}
                 >
                   Record Live with Mic
                 </button>
+                <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100/80">
+                  Tip: use audio of at least {RECOMMENDED_AUDIO_SECONDS} seconds for better feedback. Clips under {MIN_AUDIO_SECONDS} seconds are rejected.
+                </div>
               </div>
             )}
 
             {isAudioRecording && (
               <div className="text-center">
                 <div className="text-red-400 font-semibold mb-3">Recording...</div>
-                <button type="button" onClick={stopAudioRecording} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg">
+                <button type="button" onClick={stopAudioRecording} className={BTN_DANGER}>
                   Stop Recording
                 </button>
               </div>
@@ -1438,6 +1554,9 @@ function CombinedTab({ onResult }) {
                 <div className="bg-slate-700 rounded-lg p-8 mb-3">
                   <div className="text-green-400 font-semibold">Audio Loaded</div>
                 </div>
+                {audioPreviewUrl && (
+                  <audio src={audioPreviewUrl} controls className="w-full mb-3" />
+                )}
                 <label className="cursor-pointer block">
                   <div className="text-slate-400 hover:text-slate-300 text-sm">
                     Change Audio
@@ -1464,22 +1583,27 @@ function CombinedTab({ onResult }) {
           <div className="p-4 space-y-4">
             <p className="text-slate-400 text-sm">Upload a video with face + voice, or record one live using webcam and microphone.</p>
             {!isVideoCameraOn && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <label className="cursor-pointer block">
-                  <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
-                    <p className="text-slate-400 mb-2">Upload Video</p>
-                    <p className="text-slate-500 text-sm">Drop Video Here or Click to Upload</p>
-                  </div>
-                  <input type="file" accept="video/*" onChange={handleVideoSelect} className="hidden" />
-                </label>
-                <button
-                  type="button"
-                  onClick={startVideoCamera}
-                  className="bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg"
-                >
-                  Record Live Video (Cam + Mic)
-                </button>
-              </div>
+              <>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <label className="cursor-pointer block">
+                    <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
+                      <p className="text-slate-400 mb-2">Upload Video</p>
+                      <p className="text-slate-500 text-sm">Drop Video Here or Click to Upload</p>
+                    </div>
+                    <input type="file" accept="video/*" onChange={handleVideoSelect} className="hidden" />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={startVideoCamera}
+                    className={`w-full ${BTN_PRIMARY}`}
+                  >
+                    Record Live Video (Cam + Mic)
+                  </button>
+                </div>
+                <div className="rounded-lg border border-cyan-300/15 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100/80">
+                  Tip: use video with at least {RECOMMENDED_AUDIO_SECONDS} seconds of usable audio for the most stable multimodal result.
+                </div>
+              </>
             )}
 
             {isVideoCameraOn && (
@@ -1487,15 +1611,15 @@ function CombinedTab({ onResult }) {
                 <video ref={videoLiveRef} autoPlay playsInline muted className="w-full rounded-lg mb-3" />
                 <div className="flex flex-wrap gap-2">
                   {!isVideoRecording ? (
-                    <button type="button" onClick={startVideoRecording} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg">
+                    <button type="button" onClick={startVideoRecording} className={BTN_SUCCESS}>
                       Start Recording
                     </button>
                   ) : (
-                    <button type="button" onClick={stopVideoRecording} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg">
+                    <button type="button" onClick={stopVideoRecording} className={BTN_DANGER}>
                       Stop Recording
                     </button>
                   )}
-                  <button type="button" onClick={stopVideoCamera} className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded-lg">
+                  <button type="button" onClick={stopVideoCamera} className={BTN_NEUTRAL}>
                     Close Camera
                   </button>
                 </div>
@@ -1562,29 +1686,46 @@ function CombinedTab({ onResult }) {
       {/* Results */}
       {facialEmotion && speechEmotion && (
         <div className="space-y-4">
-          <div className={`rounded-xl p-3 text-sm font-medium ${
-            showExplainability
-              ? (gradCam || saliency)
-                ? 'bg-green-900/40 border border-green-700 text-green-200'
-                : 'bg-amber-900/40 border border-amber-700 text-amber-200'
-              : 'bg-slate-800 border border-slate-700 text-slate-300'
-          }`}>
-            {showExplainability
-              ? (gradCam || saliency)
-                ? 'Explainability generated successfully.'
-                : explainabilityStatus?.errors?.length
-                  ? `Explainability requested, but map generation failed: ${explainabilityStatus.errors.join(' | ')}`
-                  : 'Explainability was requested but no maps were returned for this input.'
-              : 'Explainability is off. Enable the toggle to request Grad-CAM and saliency outputs.'}
-          </div>
+          <div className="rounded-2xl border border-slate-700 bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 p-5 shadow-lg">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-cyan-300/10 bg-cyan-400/5 p-4">
+                <div className="text-xs uppercase tracking-[0.3em] text-cyan-300/70 mb-2">Explainability</div>
+                <div className="text-lg font-semibold text-slate-50 mb-1">
+                  {showExplainability
+                    ? (gradCam || saliency)
+                      ? 'Explainability generated successfully.'
+                      : explainabilityStatus?.errors?.length
+                        ? 'Explainability requested, but map generation failed.'
+                        : 'Explainability was requested but no maps were returned.'
+                    : 'Explainability is off.'}
+                </div>
+                <div className="text-sm text-slate-300">
+                  {showExplainability
+                    ? (gradCam || saliency)
+                      ? 'Heatmaps are ready below the summary card.'
+                      : explainabilityStatus?.errors?.length
+                        ? explainabilityStatus.errors.join(' | ')
+                        : 'Enable Grad-CAM and saliency outputs to inspect model focus.'
+                    : 'Enable the toggle to request Grad-CAM and saliency outputs.'}
+                </div>
+              </div>
 
-          {/* Concordance Banner */}
-          <div className={`rounded-xl p-4 text-center font-semibold text-lg ${
-            concordance === 'MATCH' 
-              ? 'bg-green-900/50 border border-green-700 text-green-200' 
-              : 'bg-yellow-900/50 border border-yellow-700 text-yellow-200'
-          }`}>
-            {concordance === 'MATCH' ? 'Emotions Match' : 'Emotions Differ'}
+              <div className={`rounded-xl border p-4 ${
+                concordance === 'MATCH'
+                  ? 'border-green-700 bg-green-900/25 text-green-100'
+                  : concordance === 'MISMATCH'
+                    ? 'border-yellow-700 bg-yellow-900/25 text-yellow-100'
+                    : 'border-slate-600 bg-slate-900/40 text-slate-100'
+              }`}>
+                <div className="text-xs uppercase tracking-[0.3em] text-white/50 mb-2">Concordance</div>
+                <div className="text-3xl font-bold leading-none">
+                  {formatPercent(Number.isFinite(concordanceScore) ? concordanceScore : getConcordanceScoreFromLabel(concordance))}
+                </div>
+                <div className="mt-2 text-sm font-medium">
+                  {concordance === 'MATCH' ? 'Emotions Match' : concordance === 'MISMATCH' ? 'Emotions Differ' : 'Concordance Pending'}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Results Grid */}
@@ -2797,7 +2938,7 @@ function MarketingPage({ authUser, onLogout }) {
           type="button"
           aria-label="Scroll to top"
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed right-5 bottom-5 z-50 h-11 w-11 rounded-full border border-cyan-300/45 bg-cyan-400/15 text-cyan-200 text-lg font-bold shadow-[0_8px_24px_rgba(34,211,238,0.25)] hover:bg-cyan-400/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+          className="fixed right-5 bottom-5 z-50 h-11 w-11 rounded-full border border-cyan-300/25 bg-[#071424] text-cyan-100 text-lg font-bold shadow-none hover:bg-[#0b1b31] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
         >
           ↑
         </button>
@@ -3351,6 +3492,7 @@ function DashboardConsole({ authUser, onLogout }) {
   const [toasts, setToasts] = useState([]);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const logoDataUrlRef = useRef(null);
+  const whiteLogoDataUrlRef = useRef(null);
   const toastCounterRef = useRef(0);
 
   const tabs = [
@@ -3541,6 +3683,35 @@ function DashboardConsole({ authUser, onLogout }) {
     return dataUrl;
   };
 
+  const ensureWhiteLogoDataUrl = async () => {
+    if (whiteLogoDataUrlRef.current) return whiteLogoDataUrlRef.current;
+    const logoDataUrl = await ensureLogoDataUrl();
+    const image = new Image();
+    image.src = logoDataUrl;
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const { data } = imageData;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] > 0) {
+        data[i] = 255;
+        data[i + 1] = 255;
+        data[i + 2] = 255;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+    whiteLogoDataUrlRef.current = canvas.toDataURL('image/png');
+    return whiteLogoDataUrlRef.current;
+  };
+
   const exportSummaryReport = async () => {
     if (!filteredHistory.length) {
       addToast('No records available to export.', 'info');
@@ -3600,7 +3771,7 @@ function DashboardConsole({ authUser, onLogout }) {
     doc.rect(0, 98, pageWidth, 10, 'F');
 
     try {
-      const logoDataUrl = await ensureLogoDataUrl();
+      const logoDataUrl = await ensureWhiteLogoDataUrl();
       const props = doc.getImageProperties(logoDataUrl);
       const maxW = 70;
       const maxH = 54;
@@ -3620,12 +3791,12 @@ function DashboardConsole({ authUser, onLogout }) {
     doc.setTextColor(...colors.white);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(25);
-    doc.text('Performance Summary', margin + 80, 50);
+    doc.text('Performance Summary', pageWidth / 2, 50, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`User: ${authUser?.email || 'N/A'}`, margin + 80, 68);
-    doc.text(`Range: ${dateValue || 'All records'}`, margin + 80, 83);
-    doc.text(new Date().toLocaleString(), pageWidth - margin, 83, { align: 'right' });
+    doc.text(`User: ${authUser?.email || 'N/A'}`, margin + 80, 70);
+    doc.text(`Range: ${dateValue || 'All records'}`, margin + 80, 84);
+    doc.text(new Date().toLocaleString(), pageWidth - margin, 92, { align: 'right' });
 
     let y = 124;
     doc.setTextColor(...colors.text);
