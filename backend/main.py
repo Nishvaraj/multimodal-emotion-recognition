@@ -784,25 +784,15 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
                 speech_exp_status = {"requested": True, "generated": False, "error": None}
 
                 if frames and facial_emotion != "unknown":
-                    try:
-                        rep_frame = frames[len(frames) // 2]
-                        facial_exp_result = predict_facial_emotion(rep_frame, generate_explainability=True)
-                        if facial_exp_result and facial_exp_result.get("grad_cam"):
-                            explainability["grad_cam"] = facial_exp_result.get("grad_cam")
-                            facial_exp_status["generated"] = True
-                        else:
-                            facial_exp_status["error"] = (
-                                (facial_exp_result or {}).get("explainability_status", {}).get("error")
-                                or "Grad-CAM map unavailable for selected video frame"
-                            )
-                    except Exception as e:
-                        facial_exp_status["error"] = str(e)
+                    facial_exp_status["error"] = "Grad-CAM disabled for video to prevent timeout"
+                    facial_exp_status["generated"] = False
                 else:
                     facial_exp_status["error"] = "No valid face frame found for explainability"
 
                 if speech_result is not None:
                     try:
-                        speech_exp_result = predict_speech_emotion(audio, sr, generate_explainability=True)
+                        audio_short = audio[:5 * sr] if len(audio) > 5 * sr else audio
+                        speech_exp_result = predict_speech_emotion(audio_short, sr, generate_explainability=True)
                         if speech_exp_result and speech_exp_result.get("saliency"):
                             explainability["saliency"] = speech_exp_result.get("saliency")
                             speech_exp_status["generated"] = True
