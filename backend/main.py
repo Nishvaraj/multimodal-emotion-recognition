@@ -18,6 +18,11 @@ import logging
 from threading import Lock
 from dotenv import load_dotenv
 
+try:
+    from facenet_pytorch import MTCNN
+except Exception:
+    MTCNN = None
+
 # Load environment variables
 load_dotenv()
 
@@ -68,6 +73,14 @@ logger.info(f"CORS enabled for: {allowed_origins}")
 EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
 DEVICE = torch.device('cuda' if (torch.cuda.is_available() and USE_GPU) else 'cpu')
+MAX_SPEECH_INFER_SECONDS = int(os.getenv('MAX_SPEECH_INFER_SECONDS', '15'))
+MAX_SPEECH_XAI_SECONDS = int(os.getenv('MAX_SPEECH_XAI_SECONDS', '8'))
+CONCORDANCE_SCORE_MAP = {
+    'MATCH': 100,
+    'PARTIAL': 65,
+    'MISMATCH': 30,
+    'UNKNOWN': 0,
+}
 
 # Model storage
 vit_model = None
@@ -99,9 +112,14 @@ def _upload_suffix(filename: str, default_suffix: str) -> str:
     return suffix if suffix else default_suffix
 
 
+def _concordance_score(label: str | None) -> int:
+    return CONCORDANCE_SCORE_MAP.get((label or 'UNKNOWN').upper(), 0)
+
+
 FACE_CASCADE = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 )
+MTCNN_DETECTOR = MTCNN(keep_all=False, device=DEVICE) if MTCNN is not None else None
 
 
 def _encode_image_base64(image_array: np.ndarray) -> str:
@@ -117,6 +135,15 @@ def _decode_image_base64(image_b64: str) -> np.ndarray:
 
 
 def _detect_primary_face(image: Image.Image):
+    if MTCNN_DETECTOR is not None:
+        try:
+            boxes, probs, points = MTCNN_DETECTOR.detect(image, landmarks=True)
+            if boxes is not None and len(boxes) > 0:
+                best_idx = int(np.argmax(probs)) if probs is not None else 0
+                return tuple(int(v) for v in boxes[best_idx]), (points[best_idx] if points is not None else None)
+        except Exception as e:
+            logger.debug(f"MTCNN face detection fallback: {e}")
+
     img_array = np.array(image)
     gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
     faces = FACE_CASCADE.detectMultiScale(
@@ -127,11 +154,28 @@ def _detect_primary_face(image: Image.Image):
     )
 
     if faces is None or len(faces) == 0:
-        return None
-    return max(faces, key=lambda b: b[2] * b[3])
+        return None, None
+    best_face = max(faces, key=lambda b: b[2] * b[3])
+    return tuple(int(v) for v in best_face), None
 
 
-def _crop_face_with_margin(image_array: np.ndarray, face_box, margin_ratio: float = 0.2):
+def _rotate_image_to_level(image: Image.Image, points) -> Image.Image:
+    if points is None:
+        return image
+
+    try:
+        left_eye, right_eye = points[0], points[1]
+        angle = np.degrees(np.arctan2(right_eye[1] - left_eye[1], right_eye[0] - left_eye[0]))
+        if abs(angle) < 1.0:
+            return image
+        center_x = image.width / 2
+        center_y = image.height / 2
+        return image.rotate(-angle, resample=Image.Resampling.BICUBIC, expand=True, center=(center_x, center_y), fillcolor=(0, 0, 0))
+    except Exception:
+        return image
+
+
+def _crop_face_with_margin(image_array: np.ndarray, face_box, margin_ratio: float = 0.12):
     x, y, w, h = [int(v) for v in face_box]
     h_img, w_img = image_array.shape[:2]
     mx = int(w * margin_ratio)
@@ -143,6 +187,28 @@ def _crop_face_with_margin(image_array: np.ndarray, face_box, margin_ratio: floa
     y2 = min(h_img, y + h + my)
 
     return image_array[y1:y2, x1:x2], (x1, y1, x2 - x1, y2 - y1)
+
+
+def _shrink_box(face_box, shrink_ratio: float = 0.12):
+    x, y, w, h = [int(v) for v in face_box]
+    dx = int(w * shrink_ratio / 2)
+    dy = int(h * shrink_ratio / 2)
+    x1 = x + dx
+    y1 = y + dy
+    width = max(1, w - (dx * 2))
+    height = max(1, h - (dy * 2))
+    return x1, y1, width, height
+
+
+def _trim_audio_window(audio: np.ndarray, sr: int, max_seconds: int) -> np.ndarray:
+    if audio is None or sr <= 0:
+        return audio
+    max_len = int(sr * max_seconds)
+    if max_len <= 0 or len(audio) <= max_len:
+        return audio
+    start = (len(audio) - max_len) // 2
+    end = start + max_len
+    return audio[start:end]
 
 
 logger.info(f"Device: {DEVICE}")
@@ -168,7 +234,8 @@ def load_facial_model():
             vit_model = AutoModelForImageClassification.from_pretrained(
                 'google/vit-base-patch16-224-in21k',
                 num_labels=len(EMOTIONS_FACIAL),
-                ignore_mismatched_sizes=True
+                ignore_mismatched_sizes=True,
+                attn_implementation='eager'
             )
 
             checkpoint = torch.load(FACIAL_MODEL_PATH, map_location=DEVICE)
@@ -286,28 +353,39 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
         if not ensure_facial_model_loaded():
             return None
         
+        detected = _detect_primary_face(image)
+        face_box, face_points = detected if isinstance(detected, tuple) else (None, None)
+
+        rotated_image = _rotate_image_to_level(image, face_points)
+        if rotated_image is not image:
+            rotated_detected = _detect_primary_face(rotated_image)
+            if isinstance(rotated_detected, tuple):
+                rotated_box, rotated_points = rotated_detected
+                if rotated_box is not None:
+                    image = rotated_image
+                    face_box = rotated_box
+                    face_points = rotated_points
+
         input_array = np.array(image)
-        face_box = _detect_primary_face(image)
 
         model_image = image
-        expanded_box = None
 
         if face_box is not None:
-            face_crop, expanded_box = _crop_face_with_margin(input_array, face_box)
+            face_crop, _ = _crop_face_with_margin(input_array, face_box)
             if face_crop.size > 0:
                 model_image = Image.fromarray(face_crop)
 
         annotated = input_array.copy()
         if face_box is not None:
-            x, y, w, h = [int(v) for v in face_box]
-            cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 255, 255), 2)
+            x, y, w, h = _shrink_box(face_box, shrink_ratio=0.08)
+            cv2.rectangle(annotated, (x, y), (x + w, y + h), (255, 128, 0), 2)
             cv2.putText(
                 annotated,
                 'Face detected',
                 (x, max(20, y - 8)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
-                (0, 255, 255),
+                (255, 128, 0),
                 2,
                 cv2.LINE_AA
             )
@@ -349,30 +427,7 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
                 if original_base64:
                     result["original_image"] = original_base64
                 if heatmap_base64:
-                    if expanded_box is not None:
-                        try:
-                            hx, hy, hw, hh = [int(v) for v in expanded_box]
-                            heatmap_img = _decode_image_base64(heatmap_base64)
-                            heatmap_img = cv2.resize(heatmap_img, (hw, hh), interpolation=cv2.INTER_LINEAR)
-                            projected = annotated.copy()
-                            projected[hy:hy + hh, hx:hx + hw] = heatmap_img
-                            x, y, w, h = [int(v) for v in face_box]
-                            cv2.rectangle(projected, (x, y), (x + w, y + h), (0, 255, 255), 2)
-                            cv2.putText(
-                                projected,
-                                'Decision region',
-                                (x, min(projected.shape[0] - 10, y + h + 22)),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.6,
-                                (255, 255, 0),
-                                2,
-                                cv2.LINE_AA
-                            )
-                            result["grad_cam"] = _encode_image_base64(projected)
-                        except Exception:
-                            result["grad_cam"] = heatmap_base64
-                    else:
-                        result["grad_cam"] = heatmap_base64
+                    result["grad_cam"] = heatmap_base64
                     result["explainability_status"]["generated"] = True
                 else:
                     result["explainability_status"]["error"] = "Grad-CAM map returned empty output"
@@ -393,8 +448,11 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
         
         if sr != 16000:
             audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+
+        # Keep inference fast and stable for long recordings.
+        audio_for_infer = _trim_audio_window(audio, 16000, MAX_SPEECH_INFER_SECONDS)
         
-        inputs = speech_processor(audio, sampling_rate=16000, return_tensors="pt", padding=True)
+        inputs = speech_processor(audio_for_infer, sampling_rate=16000, return_tensors="pt", padding=True)
         with torch.no_grad():
             outputs = speech_model(inputs['input_values'].to(DEVICE))
             logits = outputs.logits.cpu().numpy()[0]
@@ -414,8 +472,10 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
                 "error": None
             }
             try:
+                # Saliency on a shorter centered chunk avoids multi-minute stalls.
+                audio_for_xai = _trim_audio_window(audio_for_infer, 16000, MAX_SPEECH_XAI_SECONDS)
                 spec_base64, saliency_base64 = generate_audio_saliency(
-                    audio,
+                    audio_for_xai,
                     speech_model,
                     speech_processor,
                     top_idx,
@@ -560,6 +620,7 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
             "combined_emotion": combined_emotion or "unknown",
             "combined_confidence": float(combined_confidence),
             "concordance": concordance or "UNKNOWN",
+            "concordance_score": _concordance_score(concordance),
             "analysis": {
                 "match": concordance == "MATCH" if concordance else False,
                 "agreement_details": f"Face: {facial_emotion} (conf: {facial_confidence:.2f}) | Voice: {speech_emotion} (conf: {speech_confidence:.2f})"
@@ -657,10 +718,18 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
                     "probabilities": speech_result["probabilities"] if speech_result else {e: 0.0 for e in EMOTIONS_SPEECH}
                 },
                 "combined_emotion": facial_emotion if facial_confidence > 0.5 else (speech_result["emotion"] if speech_result else "unknown"),
+                "concordance": None,
+                "concordance_score": 0,
                 "video_duration": float(len(audio) / sr),
                 "frames_processed": len(frames),
                 "fps": float(fps)
             }
+
+            if facial_emotion == "unknown" or (speech_result and speech_result.get("emotion") == "unknown"):
+                response["concordance"] = "UNKNOWN"
+            elif speech_result is not None:
+                response["concordance"] = "MATCH" if facial_emotion == speech_result["emotion"] else "MISMATCH"
+            response["concordance_score"] = _concordance_score(response["concordance"])
 
             if explain:
                 explainability = {}
