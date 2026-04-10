@@ -6,19 +6,6 @@ import { supabase } from './supabaseClient';
 import { saveAnalysisToSupabase, loadAnalysisHistoryFromSupabase, updateAnalysisNote, toggleAnalysisPin, deleteAnalysisRecord } from './supabaseHistoryService';
 import logoImage from './assets/logo.png';
 
-const EMOTION_EMOJIS = {
-  'angry': 'AN',
-  'disgust': 'DI',
-  'fear': 'FE',
-  'happy': 'HA',
-  'neutral': 'NE',
-  'sad': 'SA',
-  'surprise': 'SU',
-  'calm': 'CA',
-  'fearful': 'FE',
-  'surprised': 'SU'
-};
-
 const EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
 const EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised'];
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000';
@@ -507,14 +494,13 @@ function FacialTab({ onResult }) {
             </div>
             <div className="p-4 space-y-3">
               <div className="text-center mb-4">
-                <div className="text-xs font-bold tracking-[0.2em] text-slate-400 mb-2">{EMOTION_EMOJIS[emotion]}</div>
-                <div className="text-2xl font-bold text-slate-50">{emotion.toUpperCase()}</div>
+                <div className="text-2xl font-bold text-slate-50">{formatEmotionLabel(emotion)}</div>
                 <div className="text-lg text-green-400">{(confidence * 100).toFixed(1)}%</div>
               </div>
               {EMOTIONS_FACIAL.map((emo) => (
                 <div key={emo} className="space-y-1">
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-300">{EMOTION_EMOJIS[emo]} - {emo}</span>
+                    <span className="text-slate-300">{formatEmotionLabel(emo)}</span>
                     <span className="text-slate-400">{((probabilities[emo] || 0) * 100).toFixed(1)}%</span>
                   </div>
                     <div className="w-full bg-slate-700 rounded-full h-2">
@@ -541,7 +527,12 @@ function FacialTab({ onResult }) {
                   ? 'Detected face is shown with a tighter box before explainability is computed.'
                   : 'No face box was detected; model used the full image.'}
               </p>
-              <img src={annotatedImage ? `data:image/png;base64,${annotatedImage}` : imagePreview} alt="Annotated" className="w-full rounded-lg" />
+              <img
+                src={annotatedImage ? `data:image/png;base64,${annotatedImage}` : imagePreview}
+                alt="Annotated"
+                className="w-full rounded-lg"
+                style={{ maxHeight: '300px', width: '100%', objectFit: 'contain', display: 'block', margin: '0 auto' }}
+              />
             </div>
           </div>
         )}
@@ -809,9 +800,6 @@ function SpeechTab({ onResult }) {
                 </label>
               </div>
             )}
-            <div className="mt-3 rounded-lg border border-cyan-300/15 bg-cyan-400/5 px-3 py-2 text-xs text-cyan-100/80">
-              Tip: use audio of at least {RECOMMENDED_AUDIO_SECONDS} seconds for better feedback. Clips under {MIN_AUDIO_SECONDS} seconds are rejected.
-            </div>
           </div>
         </div>
 
@@ -834,6 +822,17 @@ function SpeechTab({ onResult }) {
                 </div>
               </div>
             </label>
+          </div>
+        )}
+
+        {audioFile && (
+          <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
+            <h4 className="text-slate-50 font-semibold mb-2">Analysis Tips</h4>
+            <ul className="text-slate-300 text-sm space-y-1">
+              <li>Use audio of at least 10 seconds for better results</li>
+              <li>WAV or MP3 files work best</li>
+              <li>Speak clearly for accurate speech emotion detection</li>
+            </ul>
           </div>
         )}
 
@@ -871,14 +870,13 @@ function SpeechTab({ onResult }) {
             </div>
             <div className="p-4 space-y-3">
               <div className="text-center mb-4">
-                <div className="text-xs font-bold tracking-[0.2em] text-slate-400 mb-2">{EMOTION_EMOJIS[emotion]}</div>
-                <div className="text-2xl font-bold text-slate-50">{emotion.toUpperCase()}</div>
+                <div className="text-2xl font-bold text-slate-50">{formatEmotionLabel(emotion)}</div>
                 <div className="text-lg text-green-400">{(confidence * 100).toFixed(1)}%</div>
               </div>
               {EMOTIONS_SPEECH.map((emo) => (
                 <div key={emo} className="space-y-1">
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-300">{EMOTION_EMOJIS[emo]} - {emo}</span>
+                    <span className="text-slate-300">{formatEmotionLabel(emo)}</span>
                     <span className="text-slate-400">{((probabilities[emo] || 0) * 100).toFixed(1)}%</span>
                   </div>
                   <div className="w-full bg-slate-700 rounded-full h-2">
@@ -893,20 +891,21 @@ function SpeechTab({ onResult }) {
           </div>
         )}
 
-        {/* Audio Waveform */}
+        {/* Audio Spectrogram */}
         {waveform && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
-              <span className="text-blue-300 text-sm font-medium">Audio Waveform</span>
+              <span className="text-blue-300 text-sm font-medium">Audio Spectrogram</span>
             </div>
             <div className="p-4">
               <p className="text-slate-400 text-sm mb-3">
-                Line plot of the uploaded audio signal over time.
+                Mel-frequency spectrogram of the uploaded audio signal.
               </p>
               <img
                 src={`data:image/png;base64,${waveform}`}
-                alt="Audio Waveform"
+                alt="Audio Spectrogram"
                 className="w-full rounded-lg"
+                style={{ display: 'block', margin: '0 auto', maxWidth: '100%' }}
               />
             </div>
           </div>
@@ -918,7 +917,7 @@ function SpeechTab({ onResult }) {
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
               <span className="text-blue-300 text-sm font-medium">Audio Saliency Map</span>
             </div>
-            <div className="p-4">
+            <div className="p-2">
               <p className="text-slate-400 text-sm mb-3">
                 Red frequencies = important for prediction | Blue frequencies = less important
               </p>
@@ -926,6 +925,7 @@ function SpeechTab({ onResult }) {
                 src={`data:image/png;base64,${saliency}`}
                 alt="Audio Saliency"
                 className="w-full rounded-lg"
+                style={{ minHeight: '400px', objectFit: 'contain', width: '100%', marginTop: 0, paddingTop: 0 }}
               />
             </div>
           </div>
@@ -1431,16 +1431,18 @@ function CombinedTab({ onResult }) {
         <button
           type="button"
           onClick={() => switchMode('separate')}
-          className={`ga-header-btn ${inputMode === 'separate' ? 'active' : ''}`}
+          className={`ga-header-btn ${inputMode === 'separate' ? 'active' : ''} flex items-center gap-2`}
         >
-          📷 + 🎤 Separate Inputs
+          <span className="ga-nav-icon"><DashboardIcon name="multimodal" /></span>
+          <span>Separate Inputs</span>
         </button>
         <button
           type="button"
           onClick={() => switchMode('video')}
-          className={`ga-header-btn ${inputMode === 'video' ? 'active' : ''}`}
+          className={`ga-header-btn ${inputMode === 'video' ? 'active' : ''} flex items-center gap-2`}
         >
-          🎥 Video Input
+          <span className="ga-nav-icon"><DashboardIcon name="sessions" /></span>
+          <span>Video Input</span>
         </button>
       </div>
 
@@ -1470,7 +1472,7 @@ function CombinedTab({ onResult }) {
                 <button
                   type="button"
                   onClick={startImageCamera}
-                  className={`w-full ${BTN_PRIMARY}`}
+                  className="w-full bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
                 >
                   Capture with Webcam
                 </button>
@@ -1530,7 +1532,7 @@ function CombinedTab({ onResult }) {
                 <button
                   type="button"
                   onClick={startAudioRecording}
-                  className={`w-full ${BTN_PRIMARY}`}
+                  className="w-full bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
                 >
                   Record Live with Mic
                 </button>
@@ -1584,7 +1586,7 @@ function CombinedTab({ onResult }) {
             <p className="text-slate-400 text-sm">Upload a video with face + voice, or record one live using webcam and microphone.</p>
             {!isVideoCameraOn && (
               <>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3" style={{ display: isVideoCameraOn ? 'none' : 'grid' }}>
                   <label className="cursor-pointer block">
                     <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
                       <p className="text-slate-400 mb-2">Upload Video</p>
@@ -1595,7 +1597,7 @@ function CombinedTab({ onResult }) {
                   <button
                     type="button"
                     onClick={startVideoCamera}
-                    className={`w-full ${BTN_PRIMARY}`}
+                    className="w-full bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
                   >
                     Record Live Video (Cam + Mic)
                   </button>
@@ -1606,32 +1608,46 @@ function CombinedTab({ onResult }) {
               </>
             )}
 
-            {isVideoCameraOn && (
-              <div>
-                <video ref={videoLiveRef} autoPlay playsInline muted className="w-full rounded-lg mb-3" />
-                <div className="flex flex-wrap gap-2">
-                  {!isVideoRecording ? (
-                    <button type="button" onClick={startVideoRecording} className={BTN_SUCCESS}>
-                      Start Recording
+            <div style={{ display: (isVideoCameraOn || videoPreviewUrl) ? 'block' : 'none' }}>
+              {isVideoCameraOn && (
+                <div>
+                  <video
+                    ref={videoLiveRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full rounded-lg mb-3"
+                    style={{ maxHeight: '300px', width: '100%', display: isVideoCameraOn ? 'block' : 'none' }}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {!isVideoRecording ? (
+                      <button type="button" onClick={startVideoRecording} className={BTN_SUCCESS}>
+                        Start Recording
+                      </button>
+                    ) : (
+                      <button type="button" onClick={stopVideoRecording} className={BTN_DANGER}>
+                        Stop Recording
+                      </button>
+                    )}
+                    <button type="button" onClick={stopVideoCamera} className={BTN_NEUTRAL}>
+                      Close Camera
                     </button>
-                  ) : (
-                    <button type="button" onClick={stopVideoRecording} className={BTN_DANGER}>
-                      Stop Recording
-                    </button>
-                  )}
-                  <button type="button" onClick={stopVideoCamera} className={BTN_NEUTRAL}>
-                    Close Camera
-                  </button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {videoPreviewUrl && (
-              <div>
-                <video src={videoPreviewUrl} controls className="w-full rounded-lg" />
-                <div className="text-slate-400 text-xs mt-2">Video ready for multimodal analysis.</div>
-              </div>
-            )}
+              {videoPreviewUrl && (
+                <div>
+                  <video
+                    src={videoPreviewUrl}
+                    controls
+                    className="w-full rounded-lg"
+                    style={{ maxHeight: '300px', objectFit: 'contain', width: '100%' }}
+                  />
+                  <div className="text-slate-400 text-xs mt-2">Video ready for multimodal analysis.</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1712,17 +1728,22 @@ function CombinedTab({ onResult }) {
 
               <div className={`rounded-xl border p-4 ${
                 concordance === 'MATCH'
-                  ? 'border-green-700 bg-green-900/25 text-green-100'
-                  : concordance === 'MISMATCH'
-                    ? 'border-yellow-700 bg-yellow-900/25 text-yellow-100'
+                  ? 'bg-green-900/50 border border-green-700 text-green-200'
+                  : concordance === 'PARTIAL'
+                    ? 'bg-amber-900/50 border border-amber-700 text-amber-200'
+                    : concordance === 'MISMATCH'
+                      ? 'bg-red-900/50 border border-red-700 text-red-200'
                     : 'border-slate-600 bg-slate-900/40 text-slate-100'
               }`}>
                 <div className="text-xs uppercase tracking-[0.3em] text-white/50 mb-2">Concordance</div>
-                <div className="text-3xl font-bold leading-none">
+                <div className="text-2xl font-semibold leading-tight">
+                  {concordance || 'UNKNOWN'}
+                </div>
+                <div className="mt-2 text-4xl font-bold leading-none">
                   {formatPercent(Number.isFinite(concordanceScore) ? concordanceScore : getConcordanceScoreFromLabel(concordance))}
                 </div>
-                <div className="mt-2 text-sm font-medium">
-                  {concordance === 'MATCH' ? 'Emotions Match' : concordance === 'MISMATCH' ? 'Emotions Differ' : 'Concordance Pending'}
+                <div className="mt-3 text-sm text-white/80">
+                  Face: {facialEmotion || 'unknown'} | Speech: {speechEmotion || 'unknown'}
                 </div>
               </div>
             </div>
@@ -1737,15 +1758,14 @@ function CombinedTab({ onResult }) {
               </div>
               <div className="p-4">
                 <div className="text-center mb-4">
-                  <div className="text-xs font-bold tracking-[0.2em] text-slate-400 mb-2">{EMOTION_EMOJIS[facialEmotion]}</div>
-                  <div className="text-xl font-bold text-slate-50">{facialEmotion.toUpperCase()}</div>
+                  <div className="text-xl font-bold text-slate-50">{formatEmotionLabel(facialEmotion)}</div>
                 </div>
                 {facialProbs && (
                   <div className="space-y-2">
-                    {Object.entries(facialProbs).slice(0, 4).map(([emo, prob]) => (
+                    {Object.entries(facialProbs).map(([emo, prob]) => (
                       <div key={emo} className="space-y-1">
                         <div className="flex justify-between text-xs">
-                          <span className="text-slate-300">{EMOTION_EMOJIS[emo]} - {emo}</span>
+                          <span className="text-slate-300">{formatEmotionLabel(emo)}</span>
                           <span className="text-slate-400">{(prob * 100).toFixed(0)}%</span>
                         </div>
                         <div className="w-full bg-slate-700 rounded-full h-1.5">
@@ -1768,15 +1788,14 @@ function CombinedTab({ onResult }) {
               </div>
               <div className="p-4">
                 <div className="text-center mb-4">
-                  <div className="text-xs font-bold tracking-[0.2em] text-slate-400 mb-2">{EMOTION_EMOJIS[speechEmotion]}</div>
-                  <div className="text-xl font-bold text-slate-50">{speechEmotion.toUpperCase()}</div>
+                  <div className="text-xl font-bold text-slate-50">{formatEmotionLabel(speechEmotion)}</div>
                 </div>
                 {speechProbs && (
                   <div className="space-y-2">
-                    {Object.entries(speechProbs).slice(0, 4).map(([emo, prob]) => (
+                    {Object.entries(speechProbs).map(([emo, prob]) => (
                       <div key={emo} className="space-y-1">
                         <div className="flex justify-between text-xs">
-                          <span className="text-slate-300">{EMOTION_EMOJIS[emo]} - {emo}</span>
+                          <span className="text-slate-300">{formatEmotionLabel(emo)}</span>
                           <span className="text-slate-400">{(prob * 100).toFixed(0)}%</span>
                         </div>
                         <div className="w-full bg-slate-700 rounded-full h-1.5">
@@ -1794,7 +1813,7 @@ function CombinedTab({ onResult }) {
           </div>
 
           {/* Annotated Face */}
-          {inputMode === 'separate' && (annotatedFace || imagePreview) && (
+          {facialEmotion && inputMode === 'separate' && (
             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
               <div className="bg-blue-900 px-4 py-2">
                 <span className="text-blue-300 text-sm font-medium">Face Detection</span>
@@ -1805,7 +1824,12 @@ function CombinedTab({ onResult }) {
                     ? 'Detected face is boxed before explainability is computed.'
                     : 'Face box not found; full image was analyzed.'}
                 </p>
-                <img src={annotatedFace ? `data:image/png;base64,${annotatedFace}` : imagePreview} alt="Annotated" className="w-full rounded-lg" />
+                <img
+                  src={annotatedFace ? `data:image/png;base64,${annotatedFace}` : imagePreview}
+                  alt="Annotated"
+                  className="w-full rounded-lg"
+                  style={{ maxHeight: '300px', width: '100%', objectFit: 'contain', display: 'block', margin: '0 auto' }}
+                />
               </div>
             </div>
           )}
@@ -1814,22 +1838,32 @@ function CombinedTab({ onResult }) {
           {(gradCam || saliency || waveform) && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {gradCam && (
-                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden lg:col-span-1">
                   <div className="bg-blue-900 px-4 py-2">
                     <span className="text-blue-300 text-sm font-medium">Facial Grad-CAM</span>
                   </div>
                   <div className="p-4">
-                    <img src={`data:image/png;base64,${gradCam}`} alt="Grad-CAM" className="w-full rounded-lg" />
+                    <img
+                      src={`data:image/png;base64,${gradCam}`}
+                      alt="Grad-CAM"
+                      className="w-full rounded-lg"
+                      style={{ minHeight: '300px', objectFit: 'contain', width: '100%' }}
+                    />
                   </div>
                 </div>
               )}
               {waveform && (
                 <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
                   <div className="bg-blue-900 px-4 py-2">
-                    <span className="text-blue-300 text-sm font-medium">Audio Waveform</span>
+                    <span className="text-blue-300 text-sm font-medium">Audio Spectrogram</span>
                   </div>
                   <div className="p-4">
-                    <img src={`data:image/png;base64,${waveform}`} alt="Waveform" className="w-full rounded-lg" />
+                    <img
+                      src={`data:image/png;base64,${waveform}`}
+                      alt="Audio Spectrogram"
+                      className="w-full rounded-lg"
+                      style={{ minHeight: '200px', objectFit: 'contain', width: '100%', display: 'block', margin: '0 auto', maxWidth: '100%' }}
+                    />
                   </div>
                 </div>
               )}
@@ -1839,7 +1873,12 @@ function CombinedTab({ onResult }) {
                     <span className="text-blue-300 text-sm font-medium">Audio Saliency</span>
                   </div>
                   <div className="p-4">
-                    <img src={`data:image/png;base64,${saliency}`} alt="Saliency" className="w-full rounded-lg" />
+                    <img
+                      src={`data:image/png;base64,${saliency}`}
+                      alt="Saliency"
+                      className="w-full rounded-lg"
+                      style={{ minHeight: '400px', objectFit: 'contain', width: '100%', display: 'block', margin: '0 auto', maxWidth: '100%' }}
+                    />
                   </div>
                 </div>
               )}
@@ -2395,7 +2434,7 @@ function MarketingPage({ authUser, onLogout }) {
   const currentScenario = scenarios[activeScenario];
   const overlapGap = 40 - (currentScenario.score / 100) * 26;
   const meterAngle = -90 + (gaugeScore / 100) * 180;
-  const navOverlay = 'rgba(6,13,22,0.8)';
+  const navOverlay = '#0a0f1e';
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'dark');
@@ -2413,7 +2452,7 @@ function MarketingPage({ authUser, onLogout }) {
       <nav
         aria-label="Primary"
         className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 py-0 border-b border-white/10"
-        style={{ background: navOverlay, backdropFilter: 'blur(12px)' }}
+        style={{ background: navOverlay }}
       >
         <button
           type="button"
@@ -2475,9 +2514,7 @@ function MarketingPage({ authUser, onLogout }) {
       </nav>
 
       <main id="main-content" className="pt-10">
-        <div className="mmer-mesh-bg" aria-hidden="true" />
         <section className="relative min-h-screen flex items-center px-4 py-16">
-          <div className="absolute inset-0 grid-bg opacity-60" />
           <div className="relative z-10 max-w-6xl mx-auto w-full">
             <div className="text-center space-y-4">
               <p className="text-sm font-mono text-cyan-200/80 tracking-[0.3em] uppercase">Real-Time • Multi-Modal • Explainable</p>
@@ -2513,7 +2550,7 @@ function MarketingPage({ authUser, onLogout }) {
             <div className="mt-10 grid md:grid-cols-3 gap-6 items-center">
               <div className="card-glass rounded-2xl p-5">
                 <p className="text-xs font-mono text-cyan-300/80 uppercase mb-3">Facial Landmark Detection</p>
-                <div className="relative aspect-square rounded-full border border-cyan-300/40 bg-[radial-gradient(circle_at_40%_30%,rgba(34,211,238,0.16),transparent_35%),radial-gradient(circle_at_60%_55%,rgba(96,165,250,0.15),transparent_42%),rgba(10,18,32,0.85)] overflow-hidden">
+                <div className="relative aspect-square rounded-full border border-cyan-300/40 overflow-hidden" style={{ backgroundColor: '#0a0f1e' }}>
                   <svg viewBox="0 0 220 220" className="w-full h-full">
                     <ellipse cx="110" cy="108" rx="62" ry="80" fill="none" stroke="rgba(34,211,238,0.55)" strokeWidth="1.2" />
                     <ellipse cx="90" cy="96" rx="8" ry="5" fill="none" stroke="rgba(34,211,238,0.5)" strokeWidth="1" />
@@ -2719,31 +2756,18 @@ function MarketingPage({ authUser, onLogout }) {
               <h2 className="text-4xl md:text-6xl font-bold">Genuine or <span className="shimmer-text">mismatched?</span></h2>
               <p className="text-white/70 max-w-2xl mx-auto text-base">Cross-modal score reveals whether face and voice tell the same emotional story.</p>
             </div>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                {scenarios.map((row) => (
-                  <div key={row.label} className="card-glass rounded-xl p-4">
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-white/85">{row.label}</span>
-                      <span style={{ color: row.color }}>{row.score}%</span>
-                    </div>
-                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${row.score}%`, background: row.color }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <article className="card-glass rounded-2xl p-6">
+            <div className="flex justify-center">
+              <article className="card-glass rounded-2xl p-3 w-full max-w-xl">
                 <h3 className="text-base font-semibold text-white/90 mb-3">Live Concordance Snapshot</h3>
-                <div className="aspect-[16/10] rounded-xl border border-cyan-300/20 flex items-center justify-center bg-[#0a1627] relative overflow-hidden">
-                  <svg viewBox="0 0 300 180" className="w-72 h-44">
-                    <circle cx={150 - overlapGap} cy="90" r="58" fill="rgba(34,211,238,0.16)" stroke="#22d3ee" strokeOpacity="0.4" />
-                    <circle cx={150 + overlapGap} cy="90" r="58" fill="rgba(59,130,246,0.16)" stroke="#3b82f6" strokeOpacity="0.4" />
-                    <text x={150 - overlapGap - 16} y="88" fill="#22d3ee" fontSize="9" fontFamily="monospace">Face</text>
-                    <text x={150 - overlapGap - 23} y="101" fill="#22d3ee" fontSize="9" fontFamily="monospace">{currentScenario.face}</text>
-                    <text x={150 + overlapGap + 10} y="88" fill="#3b82f6" fontSize="9" fontFamily="monospace">Voice</text>
-                    <text x={150 + overlapGap + 6} y="101" fill="#3b82f6" fontSize="9" fontFamily="monospace">{currentScenario.voice}</text>
-                    <text x="150" y="90" textAnchor="middle" fill={currentScenario.color} fontSize="16" fontWeight="700" fontFamily="monospace">{currentScenario.score}%</text>
+                <div className="h-[250px] rounded-xl border border-cyan-300/20 flex items-center justify-center bg-[#0a1627] relative overflow-hidden">
+                  <svg viewBox="0 0 320 220" className="w-80 h-56">
+                    <circle cx={160 - overlapGap} cy="88" r="72" fill="rgba(34,211,238,0.16)" stroke="#22d3ee" strokeOpacity="0.4" />
+                    <circle cx={160 + overlapGap} cy="88" r="72" fill="rgba(59,130,246,0.16)" stroke="#3b82f6" strokeOpacity="0.4" />
+                    <text x={160 - overlapGap - 20} y="84" fill="#22d3ee" fontSize="10" fontFamily="monospace">Face</text>
+                    <text x={160 - overlapGap - 28} y="98" fill="#22d3ee" fontSize="10" fontFamily="monospace">{currentScenario.face}</text>
+                    <text x={160 + overlapGap + 12} y="84" fill="#3b82f6" fontSize="10" fontFamily="monospace">Voice</text>
+                    <text x={160 + overlapGap + 8} y="98" fill="#3b82f6" fontSize="10" fontFamily="monospace">{currentScenario.voice}</text>
+                    <text x="160" y="188" textAnchor="middle" fill={currentScenario.color} fontSize="24" fontWeight="700" fontFamily="monospace">{currentScenario.score}%</text>
                   </svg>
                 </div>
                 <p className="text-sm text-white/70 mt-3 leading-relaxed">{currentScenario.status}: {currentScenario.desc}</p>
@@ -2827,9 +2851,7 @@ function MarketingPage({ authUser, onLogout }) {
               <div className="space-y-4">
                 {[
                   { label: 'ViT Accuracy (FER2013)', value: '71.29%', width: 71.29, color: '#22d3ee' },
-                  { label: 'HuBERT Accuracy (RAVDESS)', value: '87.50%', width: 87.5, color: '#3b82f6' },
-                  { label: 'Target Accuracy (Project Plan)', value: '90.00%', width: 90, color: '#34d399' },
-                  { label: 'Current Gap to Target (Facial)', value: '18.71%', width: 18.71, color: '#f59e0b' }
+                  { label: 'HuBERT Accuracy (RAVDESS)', value: '87.50%', width: 87.5, color: '#3b82f6' }
                 ].map((metric, idx) => (
                   <div key={metric.label} className="card-glass rounded-xl p-4">
                     <div className="flex items-center justify-between text-sm mb-2">
@@ -2878,14 +2900,14 @@ function MarketingPage({ authUser, onLogout }) {
             </div>
             <div className="card-glass rounded-2xl p-8 text-center space-y-4 border border-cyan-300/20">
               <p className="text-sm font-mono text-white/45 uppercase tracking-[0.2em]">Privacy-first architecture</p>
-              <h3 className="text-3xl md:text-4xl font-bold">All processing happens <span className="shimmer-text">on your device</span></h3>
-              <p className="text-base text-white/75 max-w-2xl mx-auto">No raw audio, video, or emotion data leaves your machine during inference.</p>
+              <h3 className="text-3xl md:text-4xl font-bold">Secure <span className="shimmer-text">cloud inference</span></h3>
+              <p className="text-base text-white/75 max-w-2xl mx-auto">Emotion analysis runs on secure cloud infrastructure. No raw images or audio are stored permanently. Session data is protected with Row-Level Security.</p>
               <div className="flex flex-wrap justify-center gap-3 text-sm text-white/70">
-                <span>Zero cloud dependency</span>
+                <span>Secure cloud processing</span>
                 <span>•</span>
-                <span>No data transmission</span>
+                <span>No permanent media storage</span>
                 <span>•</span>
-                <span>On-device inference</span>
+                <span>Row-Level Security (Supabase)</span>
               </div>
             </div>
             <div className="card-glass rounded-2xl p-6">
@@ -2926,7 +2948,7 @@ function MarketingPage({ authUser, onLogout }) {
             <div className="space-y-2 text-center md:text-right">
               <p className="text-xs uppercase tracking-[0.2em] text-white/45">System Status</p>
               <div className="flex items-center justify-center md:justify-end gap-2 text-sm text-white/70">
-                <div className="w-2 h-2 rounded-full bg-cyan-400 pulse-glow" />
+                <div className="w-2 h-2 rounded-full bg-cyan-400" />
                 <span>Operational</span>
               </div>
               <p className="text-xs text-white/45">ViT + HuBERT · 30 FPS · &lt;500ms latency · WCAG 2.1 AA</p>
@@ -3054,7 +3076,7 @@ function KpiCard({ title, value, detail, detailClass = '' }) {
 
 function ActivityHeatmapCard({ heatmapData }) {
   return (
-    <article className="ga-card ga-heatmap-card">
+    <article className="ga-card ga-heatmap-card w-full max-w-none">
       <h3 className="ga-section-title ga-heatmap-title">Activity Heatmap · Last 12 Weeks</h3>
       <div className="ga-heatmap-grid" role="img" aria-label="Activity heatmap for the last 12 weeks">
         {heatmapData.flatMap((row, rowIdx) =>
@@ -3117,7 +3139,7 @@ function OverviewTab({ history, analytics }) {
 
       <ActivityHeatmapCard heatmapData={heatmapData} />
 
-      <section className="ga-insights-grid">
+      <section className="ga-insights-grid grid grid-cols-1 md:grid-cols-3 gap-4">
         <InsightCard
           icon="↗"
           title="Concordance improving"
@@ -3503,7 +3525,7 @@ function DashboardConsole({ authUser, onLogout }) {
     { id: 6, icon: 'overview', label: 'Emotion Trends' },
     { id: 8, icon: 'multimodal', label: 'Compare Sessions' },
     { id: 5, icon: 'history', label: 'Session History' },
-    { id: 9, icon: 'history', label: 'Export Report' },
+    { id: 9, icon: 'conversion', label: 'Export Report' },
     { id: 4, icon: 'model', label: 'Model Info' }
   ];
 
@@ -3794,8 +3816,8 @@ function DashboardConsole({ authUser, onLogout }) {
     doc.text('Performance Summary', pageWidth / 2, 50, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`User: ${authUser?.email || 'N/A'}`, margin + 80, 70);
-    doc.text(`Range: ${dateValue || 'All records'}`, margin + 80, 84);
+    doc.text(`User: ${authUser?.email || 'N/A'}`, pageWidth / 2, 70, { align: 'center' });
+    doc.text(`Range: ${dateValue || 'All records'}`, pageWidth / 2, 84, { align: 'center' });
     doc.text(new Date().toLocaleString(), pageWidth - margin, 92, { align: 'right' });
 
     let y = 124;
@@ -3892,20 +3914,25 @@ function DashboardConsole({ authUser, onLogout }) {
       });
     };
 
-    drawHeaderRow(y);
-    y += rowH;
+    const firstHeaderY = y;
+    const firstDataStartY = firstHeaderY + rowH;
+    const firstRowsPerPage = Math.max(1, Math.floor((pageHeight - tableBottomPadding - firstDataStartY) / rowH));
 
-    const remainingHeight = pageHeight - tableBottomPadding - y;
-    const maxRows = Math.max(1, Math.floor(remainingHeight / rowH));
-    const rowsToRender = filteredHistory.slice(0, maxRows);
+    const continuedHeaderY = margin + 34;
+    const continuedDataStartY = continuedHeaderY + rowH;
+    const nextRowsPerPage = Math.max(1, Math.floor((pageHeight - tableBottomPadding - continuedDataStartY) / rowH));
 
-    rowsToRender.forEach((row, idx) => {
-      if (idx % 2 === 0) {
+    const totalPages = filteredHistory.length <= firstRowsPerPage
+      ? 1
+      : 1 + Math.ceil((filteredHistory.length - firstRowsPerPage) / nextRowsPerPage);
+
+    const drawDataRow = (row, rowY, rowIndex) => {
+      if (rowIndex % 2 === 0) {
         doc.setFillColor(...colors.rowAlt);
-        doc.rect(margin, y, contentWidth, rowH, 'F');
+        doc.rect(margin, rowY, contentWidth, rowH, 'F');
       }
       doc.setDrawColor(...colors.stroke);
-      doc.rect(margin, y, contentWidth, rowH);
+      doc.rect(margin, rowY, contentWidth, rowH);
 
       const rowValues = [
         new Date(row.createdAt).toLocaleString(undefined, {
@@ -3923,20 +3950,47 @@ function DashboardConsole({ authUser, onLogout }) {
       doc.setTextColor(...colors.text);
       rowValues.forEach((value, valueIdx) => {
         const colWidth = colsW[valueIdx].width;
-        doc.text(fitText(value, colWidth - 12), x + 7, y + 13);
+        doc.text(fitText(value, colWidth - 12), x + 7, rowY + 13);
         x += colWidth;
       });
+    };
 
-      y += rowH;
-    });
+    let dataIndex = 0;
+    let pageNumber = 1;
+
+    drawHeaderRow(firstHeaderY);
+    let rowY = firstDataStartY;
+    for (let i = 0; i < firstRowsPerPage && dataIndex < filteredHistory.length; i += 1) {
+      drawDataRow(filteredHistory[dataIndex], rowY, dataIndex);
+      rowY += rowH;
+      dataIndex += 1;
+    }
+
+    while (dataIndex < filteredHistory.length) {
+      doc.addPage();
+      pageNumber += 1;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(...colors.text);
+      doc.text('Recent Sessions (continued)', margin, continuedHeaderY - 10);
+
+      drawHeaderRow(continuedHeaderY);
+      rowY = continuedDataStartY;
+      for (let i = 0; i < nextRowsPerPage && dataIndex < filteredHistory.length; i += 1) {
+        drawDataRow(filteredHistory[dataIndex], rowY, dataIndex);
+        rowY += rowH;
+        dataIndex += 1;
+      }
+    }
 
     doc.setTextColor(...colors.muted);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
-    if (filteredHistory.length > rowsToRender.length) {
-      doc.text(`Showing ${rowsToRender.length} of ${filteredHistory.length} rows for one-page export.`, margin, pageHeight - 16);
+    for (let page = 1; page <= pageNumber; page += 1) {
+      doc.setPage(page);
+      doc.text(`Page ${page} of ${pageNumber}`, pageWidth - margin, pageHeight - 16, { align: 'right' });
     }
-    doc.text('Page 1 of 1', pageWidth - margin, pageHeight - 16, { align: 'right' });
 
     doc.save(`performance-summary-${dateValue || 'all'}.pdf`);
     addToast('PDF export started.', 'success');
@@ -4080,8 +4134,8 @@ function DashboardConsole({ authUser, onLogout }) {
   }, [history]);
 
   return (
-    <div className="ga-layout">
-      <aside className="ga-sidebar">
+    <div className="ga-layout" style={{ display: 'flex', height: '100vh', gap: 0, margin: 0, padding: 0, marginTop: 0, paddingTop: 0 }}>
+      <aside className="ga-sidebar" style={{ width: '260px', minWidth: '260px', maxWidth: '260px', flexShrink: 0, margin: 0, padding: 0, marginTop: 0, paddingTop: 0 }}>
         <div className="ga-brand-wrap">
           <div className="ga-brand-top">
             <img src={logoImage} alt="Multi Modal Emotion Recognition logo" className="ga-brand-logo" />
@@ -4090,7 +4144,7 @@ function DashboardConsole({ authUser, onLogout }) {
         </div>
         <nav className="ga-nav">
           {navSections.map((section) => (
-            <div key={section.label} className="ga-nav-section">
+            <div key={section.label} className="ga-nav-section" style={{ marginBottom: '4px' }}>
               <div className="ga-nav-label">{section.label}</div>
               {section.tabIds.map((tabId) => {
                 const tab = tabs.find((item) => item.id === tabId);
@@ -4102,7 +4156,7 @@ function DashboardConsole({ authUser, onLogout }) {
                     className={`ga-nav-item ${activeTab === tab.id ? 'active' : ''}`}
                   >
                     <span className="ga-nav-icon"><DashboardIcon name={tab.icon} /></span>
-                    <span className="ga-nav-item-text">{tab.label}</span>
+                    <span className="ga-nav-item-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tab.label}</span>
                     {tab.badge && <span className="ga-nav-badge">{tab.badge}</span>}
                   </button>
                 );
@@ -4110,8 +4164,8 @@ function DashboardConsole({ authUser, onLogout }) {
             </div>
           ))}
         </nav>
-        <div className="ga-sidebar-footer">
-          <div className="ga-user-chip">
+        <div className="ga-sidebar-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px' }}>
+          <div className="ga-user-chip" style={{ flex: 1 }}>
             <div className="ga-user-avatar">{profileInitials}</div>
             <div className="ga-user-email">{authUser.email}</div>
           </div>
@@ -4119,7 +4173,7 @@ function DashboardConsole({ authUser, onLogout }) {
         </div>
       </aside>
 
-      <div className="ga-content-wrap">
+      <div className="ga-content-wrap" style={{ flex: 1, overflow: 'auto', margin: 0, padding: 0 }}>
         <header className="ga-header">
           <div className="ga-top-title">{activeTabLabel}</div>
           <div className="ga-header-actions">

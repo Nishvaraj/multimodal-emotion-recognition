@@ -116,6 +116,27 @@ def _concordance_score(label: str | None) -> int:
     return CONCORDANCE_SCORE_MAP.get((label or 'UNKNOWN').upper(), 0)
 
 
+def _calculate_concordance(facial_emotion, speech_emotion, facial_confidence, speech_confidence):
+    if facial_emotion == speech_emotion:
+        score = (facial_confidence + speech_confidence) / 2
+        if score > 0.7:
+            concordance = "MATCH"
+        elif score >= 0.4:
+            concordance = "PARTIAL"
+        else:
+            concordance = "MISMATCH"
+    else:
+        # Emotions are different - can NEVER be MATCH
+        score = 1 - abs(facial_confidence - speech_confidence)
+        if score >= 0.5:
+            concordance = "PARTIAL"
+        else:
+            concordance = "MISMATCH"
+
+    concordance_score = round(score * 100)
+    return concordance, concordance_score
+
+
 FACE_CASCADE = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 )
@@ -149,8 +170,8 @@ def _detect_primary_face(image: Image.Image):
     faces = FACE_CASCADE.detectMultiScale(
         gray,
         scaleFactor=1.1,
-        minNeighbors=5,
-        minSize=(40, 40)
+        minNeighbors=8,
+        minSize=(80, 80)
     )
 
     if faces is None or len(faces) == 0:
@@ -578,12 +599,12 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
         speech_emotion = speech_result["emotion"] if speech_result else None
         speech_confidence = speech_result["confidence"] if speech_result else 0.0
         
-        concordance = None
-        if facial_emotion and speech_emotion:
-            if facial_emotion == speech_emotion:
-                concordance = "MATCH"
-            else:
-                concordance = "MISMATCH"
+        concordance, concordance_score = _calculate_concordance(
+            facial_emotion,
+            speech_emotion,
+            facial_confidence,
+            speech_confidence,
+        )
         
         combined_emotion = None
         combined_confidence = 0.0
@@ -619,10 +640,10 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
             },
             "combined_emotion": combined_emotion or "unknown",
             "combined_confidence": float(combined_confidence),
-            "concordance": concordance or "UNKNOWN",
-            "concordance_score": _concordance_score(concordance),
+            "concordance": concordance,
+            "concordance_score": concordance_score,
             "analysis": {
-                "match": concordance == "MATCH" if concordance else False,
+                "match": concordance == "MATCH",
                 "agreement_details": f"Face: {facial_emotion} (conf: {facial_confidence:.2f}) | Voice: {speech_emotion} (conf: {speech_confidence:.2f})"
             }
         }
@@ -703,6 +724,14 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
                 facial_probs = {e: 0.0 for e in EMOTIONS_FACIAL}
             
             speech_result = predict_speech_emotion(audio, sr)
+            speech_emotion = speech_result["emotion"] if speech_result else "unknown"
+            speech_confidence = float(speech_result["confidence"]) if speech_result else 0.0
+            concordance, concordance_score = _calculate_concordance(
+                facial_emotion,
+                speech_emotion,
+                facial_confidence,
+                speech_confidence,
+            )
             
             response = {
                 "success": True,
@@ -713,23 +742,17 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
                     "probabilities": facial_probs
                 },
                 "speech_emotion": {
-                    "emotion": speech_result["emotion"] if speech_result else "unknown",
-                    "confidence": float(speech_result["confidence"]) if speech_result else 0.0,
+                    "emotion": speech_emotion,
+                    "confidence": speech_confidence,
                     "probabilities": speech_result["probabilities"] if speech_result else {e: 0.0 for e in EMOTIONS_SPEECH}
                 },
                 "combined_emotion": facial_emotion if facial_confidence > 0.5 else (speech_result["emotion"] if speech_result else "unknown"),
-                "concordance": None,
-                "concordance_score": 0,
+                "concordance": concordance,
+                "concordance_score": concordance_score,
                 "video_duration": float(len(audio) / sr),
                 "frames_processed": len(frames),
                 "fps": float(fps)
             }
-
-            if facial_emotion == "unknown" or (speech_result and speech_result.get("emotion") == "unknown"):
-                response["concordance"] = "UNKNOWN"
-            elif speech_result is not None:
-                response["concordance"] = "MATCH" if facial_emotion == speech_result["emotion"] else "MISMATCH"
-            response["concordance_score"] = _concordance_score(response["concordance"])
 
             if explain:
                 explainability = {}
