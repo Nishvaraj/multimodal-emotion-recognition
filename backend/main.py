@@ -6,7 +6,7 @@ import numpy as np
 import cv2
 import librosa
 import base64
-from PIL import Image
+from PIL import Image, ImageOps
 from io import BytesIO
 from pathlib import Path
 from transformers import AutoImageProcessor, AutoModelForImageClassification, AutoFeatureExtractor, AutoModelForAudioClassification
@@ -47,6 +47,10 @@ FRONTEND_URL = os.getenv(
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "")
 USE_GPU = os.getenv("USE_GPU", "true").lower() == "true"
 PRELOAD_MODELS = os.getenv("PRELOAD_MODELS", "false").lower() == "true"
+ENABLE_FACE_ROTATION = os.getenv("ENABLE_FACE_ROTATION", "false").lower() == "true"
+MAX_FACE_ROTATION_DEGREES = float(os.getenv("MAX_FACE_ROTATION_DEGREES", "8"))
+HAAR_MIN_NEIGHBORS = int(os.getenv("HAAR_MIN_NEIGHBORS", "5"))
+HAAR_MIN_SIZE = int(os.getenv("HAAR_MIN_SIZE", "40"))
 
 app = FastAPI(title="Multi-Modal Emotion Recognition API", version="2.0.0")
 
@@ -68,6 +72,13 @@ app.add_middleware(
 )
 
 logger.info(f"CORS enabled for: {allowed_origins}")
+logger.info(
+    "Face detection config: rotation=%s max_rotation=%.1f haar_min_neighbors=%d haar_min_size=%d",
+    ENABLE_FACE_ROTATION,
+    MAX_FACE_ROTATION_DEGREES,
+    HAAR_MIN_NEIGHBORS,
+    HAAR_MIN_SIZE,
+)
 
 # Configuration
 EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
@@ -170,8 +181,8 @@ def _detect_primary_face(image: Image.Image):
     faces = FACE_CASCADE.detectMultiScale(
         gray,
         scaleFactor=1.1,
-        minNeighbors=8,
-        minSize=(80, 80)
+        minNeighbors=HAAR_MIN_NEIGHBORS,
+        minSize=(HAAR_MIN_SIZE, HAAR_MIN_SIZE)
     )
 
     if faces is None or len(faces) == 0:
@@ -181,6 +192,9 @@ def _detect_primary_face(image: Image.Image):
 
 
 def _rotate_image_to_level(image: Image.Image, points) -> Image.Image:
+    if not ENABLE_FACE_ROTATION:
+        return image
+
     if points is None:
         return image
 
@@ -188,6 +202,9 @@ def _rotate_image_to_level(image: Image.Image, points) -> Image.Image:
         left_eye, right_eye = points[0], points[1]
         angle = np.degrees(np.arctan2(right_eye[1] - left_eye[1], right_eye[0] - left_eye[0]))
         if abs(angle) < 1.0:
+            return image
+        if abs(angle) > MAX_FACE_ROTATION_DEGREES:
+            logger.debug("Skipping face rotation due to large angle: %.2f", angle)
             return image
         center_x = image.width / 2
         center_y = image.height / 2
@@ -373,6 +390,8 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
     try:
         if not ensure_facial_model_loaded():
             return None
+
+        image = ImageOps.exif_transpose(image).convert('RGB')
         
         detected = _detect_primary_face(image)
         face_box, face_points = detected if isinstance(detected, tuple) else (None, None)
@@ -547,7 +566,7 @@ async def predict_facial(file: UploadFile = File(...), explain: bool = False):
         logger.info(f"File size: {len(contents)} bytes")
         if len(contents) == 0:
             return JSONResponse(status_code=400, content={"error": "Empty file received"})
-        image = Image.open(BytesIO(contents)).convert('RGB')
+        image = ImageOps.exif_transpose(Image.open(BytesIO(contents))).convert('RGB')
         result = predict_facial_emotion(image, generate_explainability=explain)
         return {"success": True, **result} if result else {"success": False, "error": "Prediction failed"}
     except Exception as e:
@@ -578,7 +597,7 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
     """Predict emotions from both image and audio, then compare results"""
     try:
         image_contents = await image_file.read()
-        image = Image.open(BytesIO(image_contents)).convert('RGB')
+        image = ImageOps.exif_transpose(Image.open(BytesIO(image_contents))).convert('RGB')
         facial_result = predict_facial_emotion(image, generate_explainability=explain)
         
         audio_contents = await audio_file.read()
