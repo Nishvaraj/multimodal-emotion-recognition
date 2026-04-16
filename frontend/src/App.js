@@ -4437,7 +4437,7 @@ function DashboardConsole({ authUser, onLogout }) {
             </div>
           )}
 
-          {(activeTab === 5 || activeTab === 9) && (
+          {activeTab === 5 && (
             <div className="ga-record-toolbar">
               <input
                 className="ga-search"
