@@ -129,14 +129,14 @@ body {
 }
 
 .tab-btn:hover {
-  background: rgba(26, 58, 110, );
+  background: rgba(26, 58, 110, 0.25);
   color: #ffffff;
 }
 
 .tab-btn.active {
   color: #ffffff;
   border-bottom-color: #ffffff;
-  background: rgba(26, 58, 110, );
+  background: rgba(26, 58, 110, 0.25);
   font-weight: 800;
 }
 
@@ -258,7 +258,7 @@ body {
 .file-input:focus {
   outline: none;
   border-color: #ffffff;
-  box-shadow: 0 0 0 4px rgba(26, 58, 110, );
+  box-shadow: 0 0 0 4px rgba(26, 58, 110, 0.25);
   background: #0f1420;
 }
 
@@ -310,12 +310,12 @@ body {
 .btn-primary {
   background: linear-gradient(135deg, #1a3a6e 0%, #2452a8 100%);
   color: white;
-  box-shadow: 0 4px 15px rgba(26, 58, 110, );
+  box-shadow: 0 4px 15px rgba(26, 58, 110, 0.25);
 }
 
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(26, 58, 110, );
+  box-shadow: 0 8px 25px rgba(26, 58, 110, 0.25);
 }
 
 .btn-primary:active:not(:disabled) {
@@ -326,14 +326,14 @@ body {
   background: #0f1420;
   color: #ffffff;
   border: 2px solid rgba(255, 255, 255, 0.6);
-  box-shadow: 0 2px 8px rgba(26, 58, 110, );
+  box-shadow: 0 2px 8px rgba(26, 58, 110, 0.25);
 }
 
 .btn-secondary:hover:not(:disabled) {
   background: #1a3a6e;
   color: white;
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(26, 58, 110, );
+  box-shadow: 0 8px 20px rgba(26, 58, 110, 0.25);
 }
 
 .btn-large {
@@ -342,12 +342,12 @@ body {
   font-size: 1.1em;
   padding: 16px 32px;
   width: 100%;
-  box-shadow: 0 6px 20px rgba(26, 58, 110, );
+  box-shadow: 0 6px 20px rgba(26, 58, 110, 0.25);
 }
 
 .btn-large:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 10px 30px rgba(26, 58, 110, );
+  box-shadow: 0 10px 30px rgba(26, 58, 110, 0.25);
 }
 
 .btn:disabled {
@@ -363,7 +363,7 @@ body {
   border-radius: 12px;
   margin-top: 25px;
   border-left: 5px solid #1a3a6e;
-  box-shadow: 0 4px 12px rgba(26, 58, 110, );
+  box-shadow: 0 4px 12px rgba(26, 58, 110, 0.25);
   animation: slideInLeft 0.4s ease-out;
 }
 
@@ -435,7 +435,7 @@ body {
 
 .result-item:hover {
   border-color: #ffffff;
-  box-shadow: 0 8px 20px rgba(26, 58, 110, );
+  box-shadow: 0 8px 20px rgba(26, 58, 110, 0.25);
   transform: translateY(-4px);
 }
 

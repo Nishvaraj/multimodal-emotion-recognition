@@ -2486,7 +2486,7 @@ function MarketingPage({ authUser, onLogout }) {
             <div className="relative">
               <button
                 type="button"
-                className="h-9 w-9 rounded-full border border-cyan-300/40 bg-cyan-400/15 text-cyan-100 text-xs font-bold hover:bg-cyan-400/25"
+                className="ga-profile"
                 onClick={() => setShowUserMenu((prev) => !prev)}
                 aria-haspopup="menu"
                 aria-expanded={showUserMenu}
@@ -2557,22 +2557,6 @@ function MarketingPage({ authUser, onLogout }) {
                     <ellipse cx="130" cy="96" rx="8" ry="5" fill="none" stroke="rgba(34,211,238,0.5)" strokeWidth="1" />
                     <path d="M 95 132 Q 110 142 125 132" fill="none" stroke="rgba(34,211,238,0.48)" strokeWidth="1.2" />
                   </svg>
-                  <div className="mmer-scanline-hero" />
-                  {hotspots.map((point, idx) => (
-                    <span
-                      key={idx}
-                      className="absolute rounded-full mmer-hotspot"
-                      style={{
-                        left: `${point.x}%`,
-                        top: `${point.y}%`,
-                        width: `${18 + point.w * 24}px`,
-                        height: `${18 + point.w * 24}px`,
-                        transform: 'translate(-50%, -50%)',
-                        opacity: 0.25 + point.w * 0.55,
-                        animationDelay: `${idx * 0.25}s`
-                      }}
-                    />
-                  ))}
                 </div>
               </div>
               <div className="card-glass rounded-2xl p-5">
