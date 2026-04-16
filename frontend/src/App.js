@@ -2491,10 +2491,7 @@ function MarketingPage({ authUser, onLogout }) {
   ];
 
   const [typedSubtitle, setTypedSubtitle] = useState('');
-  const [gaugeScore, setGaugeScore] = useState(0);
-  const [heroBars, setHeroBars] = useState(() => Array.from({ length: 24 }, () => 0.25 + Math.random() * 0.7));
   const [attentionBars, setAttentionBars] = useState(() => Array.from({ length: 40 }, () => 0.2 + Math.random() * 0.75));
-  const [activeEmotion, setActiveEmotion] = useState(0);
   const [activeScenario, setActiveScenario] = useState(0);
   const [neuralTick, setNeuralTick] = useState(0);
   const [hotspots, setHotspots] = useState([
@@ -2502,8 +2499,6 @@ function MarketingPage({ authUser, onLogout }) {
     { x: 60, y: 34, w: 0.74 },
     { x: 50, y: 58, w: 0.9 }
   ]);
-
-  const emotionBadges = ['Happy', 'Neutral', 'Fearful', 'Surprised', 'Sad', 'Angry', 'Disgusted', 'Calm'];
 
   const pipelineRef = useRef(null);
   const xaiRef = useRef(null);
@@ -2538,19 +2533,6 @@ function MarketingPage({ authUser, onLogout }) {
   }, [subtitle]);
 
   useEffect(() => {
-    let current = 0;
-    const interval = setInterval(() => {
-      current += 2;
-      if (current >= 94) {
-        current = 94;
-        clearInterval(interval);
-      }
-      setGaugeScore(current);
-    }, 24);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     const offset = 64;
     const updateActiveSection = () => {
       const scrollTop = window.scrollY + offset;
@@ -2579,10 +2561,6 @@ function MarketingPage({ authUser, onLogout }) {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setHeroBars((prev) => prev.map((value) => {
-        const target = 0.2 + Math.random() * 0.8;
-        return value + (target - value) * 0.35;
-      }));
       setAttentionBars((prev) => prev.map((value) => {
         const target = 0.12 + Math.random() * 0.88;
         return value + (target - value) * 0.45;
@@ -2597,17 +2575,13 @@ function MarketingPage({ authUser, onLogout }) {
   }, []);
 
   useEffect(() => {
-    const badgeTimer = setInterval(() => {
-      setActiveEmotion((index) => (index + 1) % emotionBadges.length);
-    }, 1800);
     const scenarioTimer = setInterval(() => {
       setActiveScenario((index) => (index + 1) % scenarios.length);
     }, 4000);
     return () => {
-      clearInterval(badgeTimer);
       clearInterval(scenarioTimer);
     };
-  }, [emotionBadges.length, scenarios.length]);
+  }, [scenarios.length]);
 
   useEffect(() => {
     const sections = [
@@ -2642,7 +2616,6 @@ function MarketingPage({ authUser, onLogout }) {
 
   const currentScenario = scenarios[activeScenario];
   const overlapGap = 40 - (currentScenario.score / 100) * 26;
-  const meterAngle = -90 + (gaugeScore / 100) * 180;
   const navOverlay = '#0a0f1e';
 
   useEffect(() => {
@@ -2722,95 +2695,72 @@ function MarketingPage({ authUser, onLogout }) {
         </div>
       </nav>
 
-      <main id="main-content" className="pt-10">
-        <section className="relative min-h-screen flex items-center px-4 py-16">
+      <main id="main-content" className="pt-10 relative">
+        <div
+          className="absolute inset-0 pointer-events-none opacity-20"
+          aria-hidden="true"
+          style={{
+            backgroundImage: 'linear-gradient(rgba(148,163,184,0.25) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.25) 1px, transparent 1px)',
+            backgroundSize: '32px 32px'
+          }}
+        />
+        <section className="relative min-h-screen flex items-center px-4 py-20">
           <div className="relative z-10 max-w-6xl mx-auto w-full">
-            <div className="text-center space-y-4">
-              <p className="text-sm font-mono text-cyan-200/80 tracking-[0.3em] uppercase">Real-Time • Multi-Modal • Explainable</p>
-              <h1 className="text-5xl md:text-7xl font-black text-white">Multi Modal Emotion Recognition</h1>
-              <p aria-live="polite" className="text-xl md:text-3xl text-white/80 font-mono">{typedSubtitle}<span className="border-r-2 border-cyan-400 animate-pulse">&nbsp;</span></p>
-              <p className="text-base md:text-lg text-white/70 max-w-3xl mx-auto leading-relaxed">
-                Dual-modality emotion analysis using Vision Transformer and HuBERT models, computing concordance scores as match, partial match, or mismatch.
-              </p>
-              <div className="pt-3 flex flex-wrap items-center justify-center gap-3">
-                <button
-                  type="button"
-                  className="rounded-full bg-cyan-400/20 border border-cyan-300/45 px-5 py-2 text-base hover:bg-cyan-400/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
-                  onClick={() => {
-                    if (authUser) {
-                      navigate('/app/dashboard');
-                      return;
-                    }
-                    navigate('/login', { state: { redirectTo: '/app/dashboard' } });
-                  }}
-                >
-                  Go to Dashboard
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-cyan-300/35 px-5 py-2 text-base hover:bg-cyan-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
-                  onClick={() => scrollToSection('architecture')}
-                >
-                  Explore Architecture
-                </button>
+            <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-8 lg:gap-10 items-center">
+              <div className="space-y-5 text-center lg:text-left">
+                <p className="text-sm font-mono text-cyan-200/80 tracking-[0.3em] uppercase">Real-Time • Multi-Modal • Explainable</p>
+                <h1 className="text-5xl md:text-7xl font-black text-white leading-[0.95]">Multi Modal Emotion Recognition</h1>
+                <p aria-live="polite" className="text-xl md:text-3xl text-white/80 font-mono">{typedSubtitle}<span className="border-r-2 border-cyan-400 animate-pulse">&nbsp;</span></p>
+                <p className="text-base md:text-lg text-white/70 max-w-2xl lg:max-w-none leading-relaxed">
+                  Analyze face and voice together with transformer models, then explain predictions through visual evidence and concordance scoring.
+                </p>
+                <div className="pt-3 flex flex-wrap items-center justify-center lg:justify-start gap-3">
+                  <button
+                    type="button"
+                    className="rounded-full bg-cyan-400/20 border border-cyan-300/45 px-5 py-2 text-base hover:bg-cyan-400/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                    onClick={() => {
+                      if (authUser) {
+                        navigate('/app/dashboard');
+                        return;
+                      }
+                      navigate('/login', { state: { redirectTo: '/app/dashboard' } });
+                    }}
+                  >
+                    Go to Dashboard
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full border border-cyan-300/35 px-5 py-2 text-base hover:bg-cyan-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                    onClick={() => scrollToSection('architecture')}
+                  >
+                    Explore Architecture
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div className="mt-10 grid md:grid-cols-3 gap-6 items-center">
-              <div className="card-glass rounded-2xl p-5">
-                <p className="text-xs font-mono text-cyan-300/80 uppercase mb-3">Facial Landmark Detection</p>
-                <div className="relative aspect-square rounded-full border border-cyan-300/40 overflow-hidden" style={{ backgroundColor: '#0a0f1e' }}>
-                  <svg viewBox="0 0 220 220" className="w-full h-full">
-                    <ellipse cx="110" cy="108" rx="62" ry="80" fill="none" stroke="rgba(34,211,238,0.55)" strokeWidth="1.2" />
-                    <ellipse cx="90" cy="96" rx="8" ry="5" fill="none" stroke="rgba(34,211,238,0.5)" strokeWidth="1" />
-                    <ellipse cx="130" cy="96" rx="8" ry="5" fill="none" stroke="rgba(34,211,238,0.5)" strokeWidth="1" />
-                    <path d="M 95 132 Q 110 142 125 132" fill="none" stroke="rgba(34,211,238,0.48)" strokeWidth="1.2" />
-                  </svg>
+              <div className="relative card-glass rounded-[28px] border border-cyan-300/20 p-3 sm:p-4">
+                <div className="rounded-[22px] overflow-hidden bg-[#030914] aspect-[16/12] sm:aspect-[16/11] lg:aspect-[20/22] max-h-[640px] flex items-center justify-center">
+                  <video
+                    src="/landing-hero.mp4"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    className="w-full h-full object-cover"
+                  />
                 </div>
-              </div>
-              <div className="card-glass rounded-2xl p-5">
-                <p className="text-xs font-mono text-cyan-300/80 uppercase mb-3">Concordance Meter</p>
-                <div className="relative h-24">
-                  <svg viewBox="0 0 180 90" className="w-full h-full">
-                    <path d="M 20 78 A 70 70 0 0 1 160 78" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" strokeLinecap="round" />
-                    <path d="M 20 78 A 70 70 0 0 1 160 78" fill="none" stroke="url(#meterGradHero)" strokeWidth="8" strokeLinecap="round" opacity="0.45" />
-                    <defs>
-                      <linearGradient id="meterGradHero" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#f87171" />
-                        <stop offset="55%" stopColor="#f59e0b" />
-                        <stop offset="100%" stopColor="#22d3ee" />
-                      </linearGradient>
-                    </defs>
-                    <g style={{ transformOrigin: '90px 78px', transform: `rotate(${meterAngle}deg)` }}>
-                      <line x1="90" y1="78" x2="90" y2="24" stroke="#22d3ee" strokeWidth="2" strokeLinecap="round" />
-                      <circle cx="90" cy="78" r="4" fill="#22d3ee" />
-                    </g>
-                    <text x="90" y="67" textAnchor="middle" fill="#9be9ff" fontSize="20" fontWeight="700" fontFamily="monospace">{Math.round(gaugeScore)}%</text>
-                  </svg>
-                </div>
-                <p className="text-sm text-amber-300 mt-3 font-mono">Partial Match</p>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-center">
-                  <div className="rounded-lg bg-cyan-400/10 border border-cyan-300/20 py-2">
-                    <p className="text-[10px] text-white/40">Face</p>
-                    <p className="text-cyan-300 text-xs font-semibold">Happy</p>
+                <div className="absolute left-4 right-4 sm:left-6 sm:right-6 bottom-7 sm:bottom-7 rounded-2xl border border-cyan-300/30 bg-[#03101e]/85 backdrop-blur-md px-4 py-3 text-center">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    <p className="text-[10px] uppercase tracking-[0.25em] text-cyan-300/80 font-mono">Live Multimodal Inference</p>
                   </div>
-                  <div className="rounded-lg bg-blue-400/10 border border-blue-300/20 py-2">
-                    <p className="text-[10px] text-white/40">Voice</p>
-                    <p className="text-blue-300 text-xs font-semibold">Neutral</p>
-                  </div>
-                </div>
-              </div>
-              <div className="card-glass rounded-2xl p-5">
-                <p className="text-xs font-mono text-cyan-300/80 uppercase mb-3">Audio Activation</p>
-                <div className="h-32 flex items-end gap-1">
-                  {heroBars.map((bar, idx) => (
-                    <span key={idx} className="flex-1 rounded-t-sm bg-gradient-to-t from-blue-600 to-cyan-300 transition-all duration-150" style={{ height: `${20 + bar * 80}%`, opacity: 0.55 + bar * 0.4 }} />
-                  ))}
+                  <p className="text-xs text-white/75 leading-relaxed">ViT + HuBERT fusion with concordance scoring and explainable outputs.</p>
                 </div>
               </div>
             </div>
 
-            <div className="mt-8 flex flex-wrap justify-center gap-8 text-sm font-mono">
+            <div className="mt-14 flex flex-wrap justify-center gap-8 text-sm font-mono">
               {[
                 { value: '71.29%', sub: 'ViT (FER2013)' },
                 { value: '87.50%', sub: 'HuBERT (RAVDESS)' },
@@ -2821,28 +2771,6 @@ function MarketingPage({ authUser, onLogout }) {
                   <div className="text-2xl font-bold shimmer-text">{stat.value}</div>
                   <div className="text-white/55 uppercase tracking-widest text-xs">{stat.sub}</div>
                 </div>
-              ))}
-            </div>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {emotionBadges.map((emotion, idx) => (
-                <span
-                  key={emotion}
-                  className="px-3 py-1 rounded-full text-[11px] border font-mono transition-all duration-300"
-                  style={{
-                    color: idx === activeEmotion
-                      ? '#0ea5e9'
-                      : 'rgba(255,255,255,0.6)',
-                    borderColor: idx === activeEmotion
-                      ? 'rgba(14,165,233,0.55)'
-                      : 'rgba(255,255,255,0.18)',
-                    background: idx === activeEmotion
-                      ? 'rgba(14,165,233,0.14)'
-                      : 'transparent',
-                    boxShadow: idx === activeEmotion ? '0 0 16px rgba(34,211,238,0.4)' : 'none'
-                  }}
-                >
-                  {emotion}
-                </span>
               ))}
             </div>
           </div>
@@ -3117,7 +3045,7 @@ function MarketingPage({ authUser, onLogout }) {
           </div>
         </section>
 
-        <footer className="border-t border-white/10 py-12 px-4">
+        <footer className="relative z-10 border-t border-white/10 py-12 px-4" style={{ background: navOverlay }}>
           <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 items-start">
             <div className="space-y-2 text-center md:text-left">
               <div className="text-2xl font-bold text-white">Multi Modal Emotion Recognition</div>
