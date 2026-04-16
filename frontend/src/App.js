@@ -718,7 +718,7 @@ function SpeechTab({ onResult }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* Left Column - Input */}
-      <div className="space-y-4">
+      <div className="space-y-4" style={{ minHeight: '400px' }}>
         {/* Audio Record/Upload Card */}
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
           <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
@@ -917,15 +917,15 @@ function SpeechTab({ onResult }) {
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
               <span className="text-blue-300 text-sm font-medium">Audio Saliency Map</span>
             </div>
-            <div className="p-2">
-              <p className="text-slate-400 text-sm mb-3">
+            <div className="p-2" style={{ paddingTop: 0, marginTop: 0 }}>
+              <p className="text-slate-400 text-sm mb-3 mt-2">
                 Red frequencies = important for prediction | Blue frequencies = less important
               </p>
               <img
                 src={`data:image/png;base64,${saliency}`}
                 alt="Audio Saliency"
                 className="w-full rounded-lg"
-                style={{ minHeight: '400px', objectFit: 'contain', width: '100%', marginTop: 0, paddingTop: 0 }}
+                style={{ width: '100%', objectFit: 'contain', display: 'block', marginTop: 0, paddingTop: 0 }}
               />
             </div>
           </div>
@@ -1836,48 +1836,48 @@ function CombinedTab({ onResult }) {
 
           {/* Explainability Visualizations */}
           {(gradCam || saliency || waveform) && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ alignItems: 'stretch' }}>
               {gradCam && (
-                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden lg:col-span-1">
+                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden lg:col-span-1" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                   <div className="bg-blue-900 px-4 py-2">
                     <span className="text-blue-300 text-sm font-medium">Facial Grad-CAM</span>
                   </div>
-                  <div className="p-4">
+                  <div className="p-4" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <img
                       src={`data:image/png;base64,${gradCam}`}
                       alt="Grad-CAM"
                       className="w-full rounded-lg"
-                      style={{ minHeight: '300px', objectFit: 'contain', width: '100%' }}
+                      style={{ width: '100%', objectFit: 'contain', maxHeight: '350px' }}
                     />
                   </div>
                 </div>
               )}
               {waveform && (
-                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                   <div className="bg-blue-900 px-4 py-2">
                     <span className="text-blue-300 text-sm font-medium">Audio Spectrogram</span>
                   </div>
-                  <div className="p-4">
+                  <div className="p-4" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <img
                       src={`data:image/png;base64,${waveform}`}
                       alt="Audio Spectrogram"
                       className="w-full rounded-lg"
-                      style={{ minHeight: '200px', objectFit: 'contain', width: '100%', display: 'block', margin: '0 auto', maxWidth: '100%' }}
+                      style={{ width: '100%', objectFit: 'contain', maxHeight: '350px' }}
                     />
                   </div>
                 </div>
               )}
               {saliency && (
-                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                   <div className="bg-blue-900 px-4 py-2">
                     <span className="text-blue-300 text-sm font-medium">Audio Saliency</span>
                   </div>
-                  <div className="p-4">
+                  <div className="p-4" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <img
                       src={`data:image/png;base64,${saliency}`}
                       alt="Saliency"
                       className="w-full rounded-lg"
-                      style={{ minHeight: '400px', objectFit: 'contain', width: '100%', display: 'block', margin: '0 auto', maxWidth: '100%' }}
+                      style={{ width: '100%', objectFit: 'contain', maxHeight: '350px' }}
                     />
                   </div>
                 </div>
@@ -3522,7 +3522,6 @@ function DashboardConsole({ authUser, onLogout }) {
     { id: 3, icon: 'multimodal', label: 'Combined Analysis' },
     { id: 1, icon: 'facial', label: 'Facial Upload' },
     { id: 2, icon: 'speech', label: 'Speech Upload' },
-    { id: 6, icon: 'overview', label: 'Emotion Trends' },
     { id: 8, icon: 'multimodal', label: 'Compare Sessions' },
     { id: 5, icon: 'history', label: 'Session History' },
     { id: 9, icon: 'conversion', label: 'Export Report' },
@@ -3532,7 +3531,7 @@ function DashboardConsole({ authUser, onLogout }) {
   const navSections = [
     { label: 'Overview', tabIds: [0] },
     { label: 'Analysis', tabIds: [3, 1, 2] },
-    { label: 'Insights', tabIds: [6, 8] },
+    { label: 'Insights', tabIds: [8] },
     { label: 'Records', tabIds: [5, 9, 4] }
   ];
 
@@ -3541,7 +3540,6 @@ function DashboardConsole({ authUser, onLogout }) {
     1: 'Facial-only analysis with upload or webcam capture.',
     2: 'Speech-only analysis with upload or microphone recording.',
     3: 'Primary combined face + voice analysis using separate inputs or a single video.',
-    6: 'View emotion trend summaries across recent sessions.',
     8: 'Compare session-level changes and differences.',
     5: 'Track, annotate, pin, and export your analysis history.',
     9: 'Generate and export report summaries.',
@@ -4248,7 +4246,6 @@ function DashboardConsole({ authUser, onLogout }) {
           {activeTab === 1 && <div className="ga-card ga-tab-shell"><FacialTab onResult={addHistoryRecord} /></div>}
           {activeTab === 2 && <div className="ga-card ga-tab-shell"><SpeechTab onResult={addHistoryRecord} /></div>}
           {activeTab === 3 && <div className="ga-card ga-tab-shell"><CombinedTab onResult={addHistoryRecord} /></div>}
-          {activeTab === 6 && <div className="ga-card ga-tab-shell"><EmotionTrendsTab analytics={analytics} history={history} /></div>}
           {activeTab === 8 && <div className="ga-card ga-tab-shell"><CompareSessionsTab analytics={analytics} history={history} /></div>}
           {activeTab === 4 && <div className="ga-card ga-tab-shell"><ModelInfoTab /></div>}
           {activeTab === 9 && <div className="ga-card ga-tab-shell"><ExportReportTab onExportCsv={exportHistoryCsv} onExportSummary={exportSummaryReport} analytics={analytics} /></div>}

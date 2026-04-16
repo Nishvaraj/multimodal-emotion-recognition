@@ -25,81 +25,70 @@ def generate_grad_cam(
     emotions_list: list,
     device
 ) -> Tuple[str, str]:
-    """
-    Generate heatmap using ViT attention rollout with contrast enhancement.
-    Single forward pass — fast on any hardware.
-    Returns (original_base64, heatmap_overlay_base64)
-    """
     try:
         img_rgb = np.array(image.convert('RGB'))
         h, w = img_rgb.shape[:2]
-
-        inputs = processor(image, return_tensors='pt').to(device)
+        img_pil = Image.fromarray(img_rgb)
 
         with torch.no_grad():
-            # Force attention output
-            model.config.output_attentions = True
-            outputs = model(**inputs)
-            model.config.output_attentions = False  # reset after
+            inputs = processor(img_pil, return_tensors='pt').to(device)
+            baseline_logits = model(**inputs).logits
+            baseline_prob = torch.softmax(baseline_logits, dim=-1)[0, emotion_idx].item()
 
-        attentions = outputs.attentions  # list of [1, heads, tokens, tokens]
+        GRID = 7
+        ph = h // GRID
+        pw = w // GRID
+        sensitivity = np.zeros((GRID, GRID), dtype=np.float32)
+        fill_color = img_rgb.mean(axis=(0, 1)).astype(np.uint8)
 
-        if not attentions:
-            raise RuntimeError("No attention weights returned")
+        for row in range(GRID):
+            for col in range(GRID):
+                occluded = img_rgb.copy()
+                y1, y2 = row * ph, min((row + 1) * ph, h)
+                x1, x2 = col * pw, min((col + 1) * pw, w)
+                occluded[y1:y2, x1:x2] = fill_color
+                with torch.no_grad():
+                    occ_inputs = processor(
+                        Image.fromarray(occluded),
+                        return_tensors='pt'
+                    ).to(device)
+                    occ_prob = torch.softmax(
+                        model(**occ_inputs).logits, dim=-1
+                    )[0, emotion_idx].item()
+                sensitivity[row, col] = max(0.0, baseline_prob - occ_prob)
 
-        # Attention rollout across all layers
-        num_tokens = attentions[0].shape[-1]
-        rollout = torch.eye(num_tokens).to(device)
+        s_min, s_max = sensitivity.min(), sensitivity.max()
+        if s_max > s_min:
+            sensitivity = (sensitivity - s_min) / (s_max - s_min)
+        else:
+            sensitivity = np.ones_like(sensitivity) * 0.5
 
-        for attn in attentions:
-            attn_avg = attn[0].mean(dim=0)
-            attn_avg = attn_avg + torch.eye(num_tokens).to(device)
-            attn_avg = attn_avg / attn_avg.sum(dim=-1, keepdim=True)
-            rollout = torch.matmul(attn_avg, rollout)
-
-        # CLS token attention to all patches
-        cls_attn = rollout[0, 1:]
-        n = cls_attn.numel()
-        grid = int(np.sqrt(n))
-        cls_attn = cls_attn[:grid * grid].reshape(grid, grid)
-        cam_np = cls_attn.cpu().numpy().astype(np.float32)
-
-        # Resize to image
-        cam_resized = cv2.resize(cam_np, (w, h), interpolation=cv2.INTER_CUBIC)
-
-        # Smooth
+        cam_resized = cv2.resize(sensitivity, (w, h), interpolation=cv2.INTER_CUBIC)
         cam_resized = cv2.GaussianBlur(cam_resized, (15, 15), 0)
 
-        # Use top 40% of values only — makes hotspots pop
-        threshold = np.percentile(cam_resized, 60)
-        cam_resized = np.where(cam_resized > threshold, cam_resized, threshold)
+        p_low = np.percentile(cam_resized, 30)
+        p_high = np.percentile(cam_resized, 99)
+        cam_resized = np.clip(cam_resized, p_low, p_high)
+        cam_resized = (cam_resized - p_low) / max(p_high - p_low, 1e-8)
 
-        # Normalize to full 0-1 range
-        cam_min = cam_resized.min()
-        cam_max = cam_resized.max()
-        if cam_max > cam_min:
-            cam_resized = (cam_resized - cam_min) / (cam_max - cam_min)
-
-        # Power transform to increase contrast
-        cam_resized = np.power(cam_resized, 0.5)
-
-        # Apply JET colormap
         cam_uint8 = np.uint8(255 * cam_resized)
         heatmap_bgr = cv2.applyColorMap(cam_uint8, cv2.COLORMAP_JET)
         heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
 
-        # Blend 50% original + 50% heatmap
+        # Only blend heatmap where sensitivity is high (top 40%)
+        threshold = np.percentile(cam_resized, 60)
+        mask = (cam_resized > threshold).astype(np.float32)
+        mask = cv2.GaussianBlur(mask, (21, 21), 0)[..., None]
+
         blended = (
-            0.5 * img_rgb.astype(np.float32) +
-            0.5 * heatmap_rgb.astype(np.float32)
+            (1 - mask * 0.6) * img_rgb.astype(np.float32) +
+            mask * 0.6 * heatmap_rgb.astype(np.float32)
         ).clip(0, 255).astype(np.uint8)
 
-        # Encode original
         orig_buf = BytesIO()
         Image.fromarray(img_rgb).save(orig_buf, format='PNG')
         orig_b64 = base64.b64encode(orig_buf.getvalue()).decode()
 
-        # Encode blended
         blend_buf = BytesIO()
         Image.fromarray(blended).save(blend_buf, format='PNG')
         blend_b64 = base64.b64encode(blend_buf.getvalue()).decode()
@@ -107,7 +96,7 @@ def generate_grad_cam(
         return orig_b64, blend_b64
 
     except Exception as e:
-        print(f"Error generating heatmap: {e}")
+        print(f"Error generating sensitivity map: {e}")
         return None, None
 
 
