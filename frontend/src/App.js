@@ -1371,57 +1371,23 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
   };
 
   const startVideoCamera = async () => {
-    if (!navigator?.mediaDevices?.getUserMedia) {
-      setError('Camera and microphone are not supported in this browser.');
-      return;
-    }
-    try {
-      const fullStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      videoStreamRef.current = fullStream;
-      setIsVideoCameraOn(true);
-      setError(null);
-    } catch (err) {
-      try {
-        const videoOnly = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false
-        });
-        let mergedStream = videoOnly;
-        try {
-          const audioOnly = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
-            },
-            video: false
-          });
-          mergedStream = new MediaStream([
-            ...videoOnly.getVideoTracks(),
-            ...audioOnly.getAudioTracks()
-          ]);
-        } catch (audioErr) {
-          setError('Microphone permission denied. Camera opened in video-only mode.');
-        }
-        videoStreamRef.current = mergedStream;
-        setIsVideoCameraOn(true);
-      } catch (videoErr) {
-        const isSecureContextIssue = window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-        if (isSecureContextIssue) {
-          setError('Camera/microphone require HTTPS or localhost.');
-        } else {
-          setError('Cannot access camera/microphone for video recording. Check browser permissions and system privacy settings.');
-        }
-      }
-    }
-  };
+  if (!navigator?.mediaDevices?.getUserMedia) {
+    setError('Camera and microphone are not supported in this browser.');
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: true
+    });
+    videoStreamRef.current = stream;
+    setIsVideoCameraOn(true);
+    setError(null);
+  } catch (err) {
+    setError('Cannot access camera/microphone. Check browser permissions.');
+  }
+};
+
 
   const stopVideoCamera = () => {
     if (videoLiveRef.current) {
@@ -1464,6 +1430,15 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
     if (videoRecorderRef.current && isVideoRecording) {
       videoRecorderRef.current.stop();
       setIsVideoRecording(false);
+      // Stop stream so black box disappears immediately
+      if (videoStreamRef.current) {
+        videoStreamRef.current.getTracks().forEach((track) => track.stop());
+        videoStreamRef.current = null;
+      }
+      if (videoLiveRef.current) {
+        videoLiveRef.current.srcObject = null;
+      }
+      setIsVideoCameraOn(false);
     }
   };
 
@@ -1805,7 +1780,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
           </div>
           <div className="p-4 space-y-4">
             <p className="text-slate-400 text-sm">Upload a video with face + voice, or record one live using webcam and microphone.</p>
-            {!isVideoCameraOn && (
+            {!isVideoCameraOn && !videoFile && (
               <>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3" style={{ display: isVideoCameraOn ? 'none' : 'grid' }}>
                   <label className="cursor-pointer block">
@@ -1836,9 +1811,13 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
                     ref={videoLiveRef}
                     autoPlay
                     playsInline
-                    muted
                     className="w-full rounded-lg mb-3"
                     style={{ maxHeight: '300px', width: '100%', display: isVideoCameraOn ? 'block' : 'none' }}
+                    onLoadedMetadata={() => {
+                      if (videoLiveRef.current) {
+                        videoLiveRef.current.muted = true;
+                      }
+                    }}
                   />
                   <div className="flex flex-wrap gap-2">
                     {!isVideoRecording ? (
@@ -1910,7 +1889,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
           disabled={loading}
           className="w-full bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50"
         >
-          {loading ? 'Analyzing...' : '🚀 Analyze Video'}
+          {loading ? 'Analyzing...' : 'Analyze Video'}
         </button>
       )}
 

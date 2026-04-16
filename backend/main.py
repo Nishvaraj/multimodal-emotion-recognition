@@ -784,27 +784,32 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
                 speech_exp_status = {"requested": True, "generated": False, "error": None}
 
                 if frames and facial_emotion != "unknown":
-                    facial_exp_status["error"] = "Grad-CAM disabled for video to prevent timeout"
-                    facial_exp_status["generated"] = False
-                else:
-                    facial_exp_status["error"] = "No valid face frame found for explainability"
-
-                if speech_result is not None:
                     try:
-                        audio_short = audio[:5 * sr] if len(audio) > 5 * sr else audio
-                        speech_exp_result = predict_speech_emotion(audio_short, sr, generate_explainability=True)
-                        if speech_exp_result and speech_exp_result.get("saliency"):
-                            explainability["saliency"] = speech_exp_result.get("saliency")
-                            speech_exp_status["generated"] = True
-                            if speech_exp_result.get("waveform"):
-                                explainability["waveform"] = speech_exp_result.get("waveform")
-                        else:
-                            speech_exp_status["error"] = (
-                                (speech_exp_result or {}).get("explainability_status", {}).get("error")
-                                or "Audio saliency map unavailable for this video audio"
+                        # Run GradCAM on the single best frame (highest confidence)
+                        best_frame = frames[0]
+                        best_result = None
+                        best_conf = 0
+                        for frame in frames[:10]:
+                            r = predict_facial_emotion(frame)
+                            if r and r.get("confidence", 0) > best_conf:
+                                best_conf = r["confidence"]
+                                best_frame = frame
+                                best_result = r
+
+                        if best_frame is not None:
+                            top_idx = EMOTIONS_FACIAL.index(facial_emotion) \
+                                if facial_emotion in EMOTIONS_FACIAL else 0
+                            orig_b64, heatmap_b64 = generate_grad_cam(
+                                best_frame, vit_model, facial_processor,
+                                top_idx, EMOTIONS_FACIAL, DEVICE
                             )
+                            if heatmap_b64:
+                                explainability["grad_cam"] = heatmap_b64
+                                facial_exp_status["generated"] = True
+                            else:
+                                facial_exp_status["error"] = "GradCAM returned empty output"
                     except Exception as e:
-                        speech_exp_status["error"] = str(e)
+                        facial_exp_status["error"] = str(e)
                 else:
                     speech_exp_status["error"] = "No valid audio prediction found for explainability"
 
