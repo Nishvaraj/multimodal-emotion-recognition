@@ -68,10 +68,17 @@ function getApiErrorMessage(err, fallback = 'Request failed') {
   return fallback;
 }
 
-const CONCORDANCE_SCORE_MAP = {
-  MATCH: 100,
-  PARTIAL: 65,
-  MISMATCH: 30
+const CONCORDANCE_PERCENT_MAP = {
+  MATCH: 88,
+  PARTIAL: 62,
+  MISMATCH: 28
+};
+
+const CONCORDANCE_CATEGORY_THRESHOLD = {
+  mismatchMax: 3.9,
+  partialMin: 4.0,
+  partialMax: 7.4,
+  matchMin: 7.5
 };
 
 function parseRecordTimestamp(row) {
@@ -79,16 +86,94 @@ function parseRecordTimestamp(row) {
   return Number.isFinite(time) ? time : 0;
 }
 
-function getConcordanceScore(row) {
-  if (row?.concordance && CONCORDANCE_SCORE_MAP[row.concordance]) {
-    return CONCORDANCE_SCORE_MAP[row.concordance];
+function normalizeConcordancePercent(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  if (numeric <= 10) {
+    return Math.max(1, Math.min(100, Math.round(numeric * 10)));
   }
-  const confidence = Number(row?.confidence || 0);
-  return Math.max(0, Math.min(100, confidence * 100));
+  return Math.max(1, Math.min(100, Math.round(numeric)));
+}
+
+function getConcordancePercent(rowOrValue) {
+  if (rowOrValue && typeof rowOrValue === 'object') {
+    const row = rowOrValue;
+    if (Number.isFinite(Number(row.concordance_score))) {
+      return normalizeConcordancePercent(row.concordance_score);
+    }
+    if (row?.concordance && CONCORDANCE_PERCENT_MAP[row.concordance]) {
+      return CONCORDANCE_PERCENT_MAP[row.concordance];
+    }
+    const confidence = Number(row?.confidence || 0);
+    return Math.max(1, Math.min(100, Math.round(confidence * 100)));
+  }
+
+  return normalizeConcordancePercent(rowOrValue);
+}
+
+function getConcordanceScore(rowOrValue) {
+  return getConcordancePercent(rowOrValue);
+}
+
+function getConcordanceScore10(rowOrValue) {
+  const percent = getConcordancePercent(rowOrValue);
+  return Math.max(0.1, Math.min(10, Number((percent / 10).toFixed(1))));
+}
+
+function getConcordanceCategory(rowOrValue) {
+  const score = getConcordanceScore10(rowOrValue);
+  if (score >= CONCORDANCE_CATEGORY_THRESHOLD.matchMin) {
+    return { key: 'MATCH', label: 'Match' };
+  }
+  if (score >= CONCORDANCE_CATEGORY_THRESHOLD.partialMin) {
+    return { key: 'PARTIAL', label: 'Partial Match' };
+  }
+  return { key: 'MISMATCH', label: 'Mismatch' };
 }
 
 function getConcordanceScoreFromLabel(label) {
-  return CONCORDANCE_SCORE_MAP[String(label || '').toUpperCase()] || 0;
+  return CONCORDANCE_PERCENT_MAP[String(label || '').toUpperCase()] || 0;
+}
+
+function getConcordanceMetrics(rowOrValue) {
+  const percent = getConcordancePercent(rowOrValue);
+  const score = getConcordanceScore10(percent);
+  const category = getConcordanceCategory(score);
+  return {
+    percent,
+    score,
+    categoryKey: category.key,
+    categoryLabel: category.label
+  };
+}
+
+function formatConcordanceValue(rowOrValue) {
+  const metrics = getConcordanceMetrics(rowOrValue);
+  return `${metrics.score.toFixed(1)} / ${formatPercent(metrics.percent)}`;
+}
+
+function getConcordanceToneClass(categoryKey) {
+  if (categoryKey === 'MATCH') return 'good';
+  if (categoryKey === 'PARTIAL') return 'partial';
+  return 'bad';
+}
+
+function buildConcordanceExplainabilityText({ facialEmotion, speechEmotion, categoryLabel, score, percent }) {
+  const faceText = formatEmotionLabel(facialEmotion || 'unknown');
+  const speechText = formatEmotionLabel(speechEmotion || 'unknown');
+  const categoryReason = {
+    Match: 'Both modalities point to the same emotional direction, so the system treats the session as aligned.',
+    'Partial Match': 'The predictions overlap but do not fully agree, so the score lands in the middle band.',
+    Mismatch: 'The facial and speech predictions diverge, so the session is classified as low concordance.'
+  }[categoryLabel] || 'The score is derived from how closely the facial and speech predictions align.';
+
+  return {
+    facialLine: `Facial emotion prediction: ${faceText}`,
+    speechLine: `Speech emotion prediction: ${speechText}`,
+    reasoningLine: `Reasoning: ${categoryReason}`,
+    categoryLine: `Concordance category: ${categoryLabel}`,
+    scoreLine: `Final score: ${score.toFixed(1)} / ${formatPercent(percent)}`
+  };
 }
 
 function splitMultimodalEmotions(row) {
@@ -239,7 +324,7 @@ function buildWeeklySeries(history, { metric = 'concordance', modality = 'all' }
 }
 
 // ============== FACIAL EMOTION TAB ==============
-function FacialTab({ onResult }) {
+function FacialTab({ onResult, clearSignal = 0 }) {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [emotion, setEmotion] = useState(null);
@@ -255,6 +340,30 @@ function FacialTab({ onResult }) {
   const [gradCam, setGradCam] = useState(null);
   const [annotatedImage, setAnnotatedImage] = useState(null);
   const [faceDetected, setFaceDetected] = useState(false);
+
+  const clearCurrentAnalysis = () => {
+    setError(null);
+    setShowGradCAM(false);
+    setEmotion(null);
+    setConfidence(null);
+    setProbabilities(null);
+    setGradCam(null);
+    setAnnotatedImage(null);
+    setFaceDetected(false);
+    if (isCameraOn) {
+      stopCamera();
+    }
+    if (imagePreview) {
+      setImagePreview(null);
+    }
+    setImageFile(null);
+  };
+
+  useEffect(() => {
+    if (clearSignal > 0) {
+      clearCurrentAnalysis();
+    }
+  }, [clearSignal]);
 
   useEffect(() => {
     if (isCameraOn && videoRef.current && cameraStreamRef.current) {
@@ -561,7 +670,7 @@ function FacialTab({ onResult }) {
 }
 
 // ============== SPEECH EMOTION TAB ==============
-function SpeechTab({ onResult }) {
+function SpeechTab({ onResult, clearSignal = 0 }) {
   const [audioFile, setAudioFile] = useState(null);
   const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
   const [emotion, setEmotion] = useState(null);
@@ -577,6 +686,7 @@ function SpeechTab({ onResult }) {
   const [saliency, setSaliency] = useState(null);
   const [waveform, setWaveform] = useState(null);
   const recordingStartedAtRef = useRef(null);
+  const suppressRecordingOnStopRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -598,6 +708,10 @@ function SpeechTab({ onResult }) {
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.ondataavailable = (e) => chunksRef.current.push(e.data);
       mediaRecorder.onstop = () => {
+        if (suppressRecordingOnStopRef.current) {
+          suppressRecordingOnStopRef.current = false;
+          return;
+        }
         const recordingDuration = recordingStartedAtRef.current ? (Date.now() - recordingStartedAtRef.current) / 1000 : 0;
         const recorderType = mediaRecorder.mimeType || mimeType || 'audio/webm';
         const audioBlob = new Blob(chunksRef.current, { type: recorderType });
@@ -624,6 +738,31 @@ function SpeechTab({ onResult }) {
       setError('Cannot access microphone');
     }
   };
+
+  const clearCurrentAnalysis = () => {
+    setError(null);
+    setShowSaliency(false);
+    setEmotion(null);
+    setConfidence(null);
+    setProbabilities(null);
+    setSaliency(null);
+    setWaveform(null);
+    if (isRecording && mediaRecorderRef.current) {
+      suppressRecordingOnStopRef.current = true;
+      stopRecording();
+    }
+    if (audioPreviewUrl) {
+      URL.revokeObjectURL(audioPreviewUrl);
+      setAudioPreviewUrl(null);
+    }
+    setAudioFile(null);
+  };
+
+  useEffect(() => {
+    if (clearSignal > 0) {
+      clearCurrentAnalysis();
+    }
+  }, [clearSignal]);
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
@@ -936,7 +1075,7 @@ function SpeechTab({ onResult }) {
 }
 
 // ============== COMBINED ANALYSIS TAB ==============
-function CombinedTab({ onResult }) {
+function CombinedTab({ onResult, clearSignal = 0 }) {
   const [inputMode, setInputMode] = useState('separate');
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -954,6 +1093,7 @@ function CombinedTab({ onResult }) {
   const audioRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const audioStreamRef = useRef(null);
+  const suppressAudioOnStopRef = useRef(false);
 
   const [isVideoCameraOn, setIsVideoCameraOn] = useState(false);
   const [isVideoRecording, setIsVideoRecording] = useState(false);
@@ -961,6 +1101,7 @@ function CombinedTab({ onResult }) {
   const videoRecorderRef = useRef(null);
   const videoChunksRef = useRef([]);
   const videoStreamRef = useRef(null);
+  const suppressVideoOnStopRef = useRef(false);
 
   const [facialEmotion, setFacialEmotion] = useState(null);
   const [speechEmotion, setSpeechEmotion] = useState(null);
@@ -978,6 +1119,18 @@ function CombinedTab({ onResult }) {
   const [annotatedFace, setAnnotatedFace] = useState(null);
   const [faceDetected, setFaceDetected] = useState(false);
   const [explainabilityStatus, setExplainabilityStatus] = useState(null);
+
+  const concordanceMetrics = getConcordanceMetrics({
+    concordance,
+    concordance_score: concordanceScore
+  });
+  const concordanceExplainabilityText = buildConcordanceExplainabilityText({
+    facialEmotion,
+    speechEmotion,
+    categoryLabel: concordanceMetrics.categoryLabel,
+    score: concordanceMetrics.score,
+    percent: concordanceMetrics.percent
+  });
   const audioRecordingStartedAtRef = useRef(null);
 
   useEffect(() => {
@@ -1033,6 +1186,49 @@ function CombinedTab({ onResult }) {
     setError(null);
     resetResults();
   };
+
+  const clearCurrentAnalysis = () => {
+    setError(null);
+    setShowExplainability(false);
+    resetResults();
+
+    if (inputMode === 'separate') {
+      if (isCameraOn) {
+        stopImageCamera();
+      }
+      if (isAudioRecording && audioRecorderRef.current) {
+        suppressAudioOnStopRef.current = true;
+        stopAudioRecording();
+      }
+      if (audioPreviewUrl) {
+        URL.revokeObjectURL(audioPreviewUrl);
+      }
+      setImageFile(null);
+      setImagePreview(null);
+      setAudioFile(null);
+      setAudioPreviewUrl(null);
+      return;
+    }
+
+    if (isVideoRecording && videoRecorderRef.current) {
+      suppressVideoOnStopRef.current = true;
+      stopVideoRecording();
+    }
+    if (isVideoCameraOn) {
+      stopVideoCamera();
+    }
+    if (videoPreviewUrl) {
+      URL.revokeObjectURL(videoPreviewUrl);
+    }
+    setVideoFile(null);
+    setVideoPreviewUrl(null);
+  };
+
+  useEffect(() => {
+    if (clearSignal > 0) {
+      clearCurrentAnalysis();
+    }
+  }, [clearSignal]);
 
   const handleImageSelect = (e) => {
     const file = e.target.files[0];
@@ -1124,6 +1320,10 @@ function CombinedTab({ onResult }) {
       audioRecorderRef.current = recorder;
       recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
       recorder.onstop = () => {
+        if (suppressAudioOnStopRef.current) {
+          suppressAudioOnStopRef.current = false;
+          return;
+        }
         const recordingDuration = audioRecordingStartedAtRef.current ? (Date.now() - audioRecordingStartedAtRef.current) / 1000 : 0;
         if (recordingDuration < MIN_AUDIO_SECONDS) {
           setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
@@ -1243,6 +1443,10 @@ function CombinedTab({ onResult }) {
     videoRecorderRef.current = recorder;
     recorder.ondataavailable = (e) => videoChunksRef.current.push(e.data);
     recorder.onstop = () => {
+      if (suppressVideoOnStopRef.current) {
+        suppressVideoOnStopRef.current = false;
+        return;
+      }
       const recorderType = recorder.mimeType || mimeType || videoChunksRef.current[0]?.type || 'video/webm';
       const blob = new Blob(videoChunksRef.current, { type: recorderType });
       const ext = getFileExtensionForMime(recorderType, 'webm');
@@ -1287,9 +1491,7 @@ function CombinedTab({ onResult }) {
         setFacialEmotion(response.data.facial_emotion.emotion);
         setSpeechEmotion(response.data.speech_emotion.emotion);
         setConcordance(response.data.concordance);
-        setConcordanceScore(Number.isFinite(response.data.concordance_score)
-          ? response.data.concordance_score
-          : getConcordanceScoreFromLabel(response.data.concordance));
+        setConcordanceScore(getConcordancePercent(response.data));
         setFacialProbs(response.data.facial_emotion.probabilities);
         setSpeechProbs(response.data.speech_emotion.probabilities);
         setAnnotatedFace(response.data.facial_emotion.annotated_image || null);
@@ -1367,9 +1569,14 @@ function CombinedTab({ onResult }) {
         setFacialEmotion(face);
         setSpeechEmotion(speech);
         setConcordance(videoConcordance);
-        setConcordanceScore(Number.isFinite(response.data.concordance_score)
-          ? response.data.concordance_score
-          : getConcordanceScoreFromLabel(videoConcordance));
+        setConcordanceScore(getConcordancePercent({
+          concordance: videoConcordance,
+          concordance_score: response.data.concordance_score,
+          confidence: Math.max(
+            response.data.facial_emotion?.confidence || 0,
+            response.data.speech_emotion?.confidence || 0
+          )
+        }));
         setFacialProbs(response.data.facial_emotion?.probabilities || null);
         setSpeechProbs(response.data.speech_emotion?.probabilities || null);
 
@@ -1504,6 +1711,13 @@ function CombinedTab({ onResult }) {
                     className="hidden"
                   />
                 </label>
+                <button
+                  type="button"
+                  onClick={startImageCamera}
+                  className="w-full mt-3 bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
+                >
+                  Capture with Webcam
+                </button>
               </div>
             )}
           </div>
@@ -1570,6 +1784,13 @@ function CombinedTab({ onResult }) {
                     className="hidden"
                   />
                 </label>
+                <button
+                  type="button"
+                  onClick={startAudioRecording}
+                  className="w-full mt-3 bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg"
+                >
+                  Record Live with Mic
+                </button>
               </div>
             )}
           </div>
@@ -1679,7 +1900,7 @@ function CombinedTab({ onResult }) {
           disabled={loading}
           className="w-full bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-medium text-lg transition-all duration-200 hover:shadow-lg disabled:opacity-50"
         >
-          {loading ? 'Analyzing...' : '🚀 Analyze Combined'}
+          {loading ? 'Analyzing...' : 'Analyze Combined'}
         </button>
       )}
 
@@ -1718,29 +1939,34 @@ function CombinedTab({ onResult }) {
                 <div className="text-sm text-slate-300">
                   {showExplainability
                     ? (gradCam || saliency)
-                      ? 'Heatmaps are ready below the summary card.'
+                      ? ''
                       : explainabilityStatus?.errors?.length
                         ? explainabilityStatus.errors.join(' | ')
                         : 'Enable Grad-CAM and saliency outputs to inspect model focus.'
                     : 'Enable the toggle to request Grad-CAM and saliency outputs.'}
                 </div>
+                <div className="mt-3 text-sm text-slate-200 leading-relaxed">
+                  <div>{concordanceExplainabilityText.facialLine}</div>
+                  <div>{concordanceExplainabilityText.speechLine}</div>
+                  <div>{concordanceExplainabilityText.reasoningLine}</div>
+                </div>
               </div>
 
               <div className={`rounded-xl border p-4 ${
-                concordance === 'MATCH'
+                concordanceMetrics.categoryKey === 'MATCH'
                   ? 'bg-green-900/50 border border-green-700 text-green-200'
-                  : concordance === 'PARTIAL'
+                  : concordanceMetrics.categoryKey === 'PARTIAL'
                     ? 'bg-amber-900/50 border border-amber-700 text-amber-200'
-                    : concordance === 'MISMATCH'
+                    : concordanceMetrics.categoryKey === 'MISMATCH'
                       ? 'bg-red-900/50 border border-red-700 text-red-200'
                     : 'border-slate-600 bg-slate-900/40 text-slate-100'
               }`}>
                 <div className="text-xs uppercase tracking-[0.3em] text-white/50 mb-2">Concordance</div>
-                <div className="text-2xl font-semibold leading-tight">
-                  {concordance || 'UNKNOWN'}
+                <div className="mt-2 text-3xl font-bold leading-none">
+                  {formatConcordanceValue(concordanceMetrics.percent)}
                 </div>
-                <div className="mt-2 text-4xl font-bold leading-none">
-                  {formatPercent(Number.isFinite(concordanceScore) ? concordanceScore : getConcordanceScoreFromLabel(concordance))}
+                <div className="mt-2 text-2xl font-semibold leading-tight">
+                  {concordanceMetrics.categoryLabel || 'Unknown'}
                 </div>
                 <div className="mt-3 text-sm text-white/80">
                   Face: {facialEmotion || 'unknown'} | Speech: {speechEmotion || 'unknown'}
@@ -1821,7 +2047,7 @@ function CombinedTab({ onResult }) {
               <div className="p-4">
                 <p className="text-slate-400 text-sm mb-3">
                   {faceDetected
-                    ? 'Detected face is boxed before explainability is computed.'
+                    ? 'Face detected using MTCNN and boxed before explainability is computed.'
                     : 'Face box not found; full image was analyzed.'}
                 </p>
                 <img
@@ -2216,12 +2442,12 @@ function MarketingPage({ authUser, onLogout }) {
   const subtitle = 'Detecting emotions. Understanding humans.';
   const scenarios = useMemo(() => ([
     {
-      label: 'Genuine Joy',
+      label: 'Aligned Joy',
       face: 'Happy',
       voice: 'Happy',
       score: 96,
-      status: 'Genuine',
-      color: '#22d3ee',
+      status: 'Match',
+      color: '#22c55e',
       desc: 'Face and voice align with authentic positive affect.'
     },
     {
@@ -2229,8 +2455,8 @@ function MarketingPage({ authUser, onLogout }) {
       face: 'Neutral',
       voice: 'Fearful',
       score: 22,
-      status: 'Mismatched',
-      color: '#f87171',
+      status: 'Mismatch',
+      color: '#ef4444',
       desc: 'Voice suggests distress while facial expression remains masked.'
     },
     {
@@ -2238,7 +2464,7 @@ function MarketingPage({ authUser, onLogout }) {
       face: 'Happy',
       voice: 'Neutral',
       score: 48,
-      status: 'Partial',
+      status: 'Partial Match',
       color: '#f59e0b',
       desc: 'Mild mismatch between expression and vocal energy.'
     },
@@ -2247,8 +2473,8 @@ function MarketingPage({ authUser, onLogout }) {
       face: 'Surprised',
       voice: 'Surprised',
       score: 88,
-      status: 'Genuine',
-      color: '#38bdf8',
+      status: 'Match',
+      color: '#22c55e',
       desc: 'Both modalities indicate elevated attention and engagement.'
     }
   ]), []);
@@ -2258,7 +2484,7 @@ function MarketingPage({ authUser, onLogout }) {
     { id: '01', title: 'Input Capture', desc: 'Synchronized camera + microphone streams at real-time cadence.' },
     { id: '02', title: 'Vision Transformer', desc: 'Facial patches are encoded to predict affective states.' },
     { id: '03', title: 'HuBERT Audio', desc: 'Speech prosody and vocal dynamics classify emotion signatures.' },
-    { id: '04', title: 'Concordance Engine', desc: 'Cross-modal agreement score identifies genuine vs mismatch.' },
+    { id: '04', title: 'Concordance Engine', desc: 'Cross-modal agreement score identifies match, partial match, or mismatch.' },
     { id: '05', title: 'Explainability', desc: 'Grad-CAM and attention maps reveal model decision traces.' },
     { id: '06', title: 'Live Insight', desc: 'Unified result panel streams confidence and session summary.' }
   ];
@@ -2278,6 +2504,10 @@ function MarketingPage({ authUser, onLogout }) {
     {
       title: 'Accessible Feedback',
       desc: 'Help users better understand emotional signals through interpretable visual cues.'
+    },
+    {
+      title: 'Client Fine-Tuning',
+      desc: 'The workflow can be fine-tuned further for client-specific needs, domains, and emotional taxonomies.'
     }
   ];
 
@@ -2521,7 +2751,7 @@ function MarketingPage({ authUser, onLogout }) {
               <h1 className="text-5xl md:text-7xl font-black text-white">Multi Modal Emotion Recognition</h1>
               <p aria-live="polite" className="text-xl md:text-3xl text-white/80 font-mono">{typedSubtitle}<span className="border-r-2 border-cyan-400 animate-pulse">&nbsp;</span></p>
               <p className="text-base md:text-lg text-white/70 max-w-3xl mx-auto leading-relaxed">
-                Dual-modality emotion analysis using Vision Transformer and HuBERT models, computing concordance scores to distinguish genuine from performed affect.
+                Dual-modality emotion analysis using Vision Transformer and HuBERT models, computing concordance scores as match, partial match, or mismatch.
               </p>
               <div className="pt-3 flex flex-wrap items-center justify-center gap-3">
                 <button
@@ -2579,7 +2809,7 @@ function MarketingPage({ authUser, onLogout }) {
                     <text x="90" y="67" textAnchor="middle" fill="#9be9ff" fontSize="20" fontWeight="700" fontFamily="monospace">{Math.round(gaugeScore)}%</text>
                   </svg>
                 </div>
-                <p className="text-sm text-amber-300 mt-3 font-mono">Partial Mismatch</p>
+                <p className="text-sm text-amber-300 mt-3 font-mono">Partial Match</p>
                 <div className="mt-4 grid grid-cols-2 gap-2 text-center">
                   <div className="rounded-lg bg-cyan-400/10 border border-cyan-300/20 py-2">
                     <p className="text-[10px] text-white/40">Face</p>
@@ -2737,7 +2967,7 @@ function MarketingPage({ authUser, onLogout }) {
           <div className="max-w-6xl mx-auto space-y-10">
             <div className="text-center space-y-3">
               <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-cyan-400/20 text-cyan-300/75 rounded-full">Concordance</p>
-              <h2 className="text-4xl md:text-6xl font-bold">Genuine or <span className="shimmer-text">mismatched?</span></h2>
+              <h2 className="text-4xl md:text-6xl font-bold">Match, Partial, or <span className="shimmer-text">Mismatch?</span></h2>
               <p className="text-white/70 max-w-2xl mx-auto text-base">Cross-modal score reveals whether face and voice tell the same emotional story.</p>
             </div>
             <div className="flex justify-center">
@@ -2876,7 +3106,10 @@ function MarketingPage({ authUser, onLogout }) {
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {useCases.map((uc) => (
-                <article key={uc.title} className="card-glass rounded-2xl p-5 space-y-3 border border-cyan-300/10">
+                <article
+                  key={uc.title}
+                  className={`card-glass rounded-2xl p-5 space-y-3 border border-cyan-300/10 ${uc.title === 'Client Fine-Tuning' ? 'sm:col-span-2 lg:col-span-2 lg:col-start-2' : ''}`}
+                >
                   <h3 className="text-base font-semibold text-white/90">{uc.title}</h3>
                   <p className="text-sm text-white/70 leading-relaxed">{uc.desc}</p>
                 </article>
@@ -3106,6 +3339,8 @@ function OverviewTab({ history, analytics }) {
   } = analytics;
 
   const weekDeltaText = `${weeklyConcordanceDelta >= 0 ? '↑' : '↓'} ${Math.abs(weeklyConcordanceDelta)}% ${weeklyConcordanceDelta >= 0 ? 'improving' : 'declining'}`;
+  const avgConcordanceMetrics = getConcordanceMetrics(avgConcordance);
+  const bestSessionMetrics = getConcordanceMetrics(bestSessionScore);
 
   return (
     <>
@@ -3116,8 +3351,8 @@ function OverviewTab({ history, analytics }) {
           detail={`${monthDelta >= 0 ? '↑' : '↓'} ${Math.abs(monthDelta)}% this month`}
           detailClass={monthDelta >= 0 ? 'up' : ''}
         />
-        <KpiCard title="Avg Concordance" value={formatPercent(avgConcordance)} detail={weekDeltaText} detailClass={weeklyConcordanceDelta >= 0 ? 'up' : ''} />
-        <KpiCard title="Best Session" value={formatPercent(bestSessionScore)} detail={`Match · ${bestSessionDate || '-'}`} />
+        <KpiCard title="Avg Concordance" value={formatConcordanceValue(avgConcordance)} detail={`${avgConcordanceMetrics.categoryLabel} · ${weekDeltaText}`} detailClass={weeklyConcordanceDelta >= 0 ? 'up' : ''} />
+        <KpiCard title="Best Session" value={formatConcordanceValue(bestSessionScore)} detail={`${bestSessionMetrics.categoryLabel} · ${bestSessionDate || '-'}`} />
         <KpiCard title="Streak" value={String(streakDays)} detail="days in a row" />
       </section>
 
@@ -3132,12 +3367,12 @@ function OverviewTab({ history, analytics }) {
         <InsightCard
           icon="◎"
           title={`${bestEmotionInsight.emotion} most consistent`}
-          description={`${bestEmotionInsight.emotion} has the highest facial-speech alignment at ${bestEmotionInsight.rate}% average match rate.`}
+          description={`${bestEmotionInsight.emotion} has the highest facial-speech alignment at ${formatConcordanceValue(bestEmotionInsight.rate)}.`}
         />
         <InsightCard
           icon="⚑"
           title={`${worstEmotionInsight.emotion} needs attention`}
-          description={`${worstEmotionInsight.emotion} shows lowest concordance (${worstEmotionInsight.rate}%). Your face and voice diverge on this emotion.`}
+          description={`${worstEmotionInsight.emotion} shows lowest concordance (${formatConcordanceValue(worstEmotionInsight.rate)}). Your face and voice diverge on this emotion.`}
         />
       </section>
     </>
@@ -3321,6 +3556,10 @@ function CompareSessionsTab({ analytics, history }) {
   const pairB = splitMultimodalEmotions(sessionB);
   const emotionPairA = pairA ? `${pairA.facial} | ${pairA.speech}` : sessionA.emotion;
   const emotionPairB = pairB ? `${pairB.facial} | ${pairB.speech}` : sessionB.emotion;
+  const concordanceMetricsA = getConcordanceMetrics(sessionA);
+  const concordanceMetricsB = getConcordanceMetrics(sessionB);
+  const compareToneA = selectedMetric === 'concordance' ? getConcordanceToneClass(concordanceMetricsA.categoryKey) : '';
+  const compareToneB = selectedMetric === 'concordance' ? getConcordanceToneClass(concordanceMetricsB.categoryKey) : '';
 
   return (
     <div className="ga-design-stack">
@@ -3367,14 +3606,18 @@ function CompareSessionsTab({ analytics, history }) {
       <div className="ga-design-two-col">
         <div className="ga-card">
           <div className="ga-section-title">Session A · {formatDayMonth(new Date(parseRecordTimestamp(sessionA)))}</div>
-          <div className="ga-compare-score good">{formatPercent(selectedValueA)}</div>
-          <div className="ga-compare-note">{sessionA.concordance || 'Session'}</div>
+          <div className={`ga-compare-score ${compareToneA}`}>
+            {selectedMetric === 'concordance' ? formatConcordanceValue(concordanceMetricsA.percent) : formatPercent(selectedValueA)}
+          </div>
+          <div className="ga-compare-note">{selectedMetric === 'concordance' ? concordanceMetricsA.categoryLabel : (sessionA.concordance || 'Session')}</div>
           <div className="ga-compare-note">Emotion Pair: {emotionPairA}</div>
         </div>
         <div className="ga-card">
           <div className="ga-section-title">Session B · {formatDayMonth(new Date(parseRecordTimestamp(sessionB)))}</div>
-          <div className="ga-compare-score bad">{formatPercent(selectedValueB)}</div>
-          <div className="ga-compare-note">{sessionB.concordance || 'Session'}</div>
+          <div className={`ga-compare-score ${compareToneB}`}>
+            {selectedMetric === 'concordance' ? formatConcordanceValue(concordanceMetricsB.percent) : formatPercent(selectedValueB)}
+          </div>
+          <div className="ga-compare-note">{selectedMetric === 'concordance' ? concordanceMetricsB.categoryLabel : (sessionB.concordance || 'Session')}</div>
           <div className="ga-compare-note">Emotion Pair: {emotionPairB}</div>
         </div>
       </div>
@@ -3393,13 +3636,14 @@ function CompareSessionsTab({ analytics, history }) {
 }
 
 function ExportReportTab({ onExportCsv, onExportSummary, analytics }) {
+  const avgConcordanceMetrics = getConcordanceMetrics(analytics.avgConcordance);
   return (
     <div className="ga-design-stack">
       <div className="ga-card">
         <div className="ga-section-title">Summary · {new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</div>
         <div className="ga-report-grid">
           <div>Total sessions <strong>{analytics.totalSessions}</strong></div>
-          <div>Average concordance <strong>{formatPercent(analytics.avgConcordance)}</strong></div>
+          <div>Average concordance <strong>{formatConcordanceValue(avgConcordanceMetrics.percent)}</strong></div>
           <div>Match sessions <strong>{analytics.matchCount}</strong></div>
           <div>Mismatch sessions <strong>{analytics.mismatchCount}</strong></div>
         </div>
@@ -3438,6 +3682,7 @@ function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
                 <th>Result</th>
                 <th>Confidence</th>
                 <th>Explainability</th>
+                <th>Concordance</th>
                 <th>Notes</th>
                 <th>Actions</th>
               </tr>
@@ -3452,6 +3697,7 @@ function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
                   <td>{row.emotion}</td>
                   <td>{`${((row.confidence || 0) * 100).toFixed(1)}%`}</td>
                   <td>{row.explainability || 'none'}</td>
+                  <td>{row.concordance ? `${getConcordanceMetrics(row).categoryLabel} · ${formatConcordanceValue(row)}` : '-'}</td>
                   <td>
                     <input
                       className="ga-note-input"
@@ -3491,6 +3737,9 @@ const THEME_STORAGE_KEY = 'mmer_theme';
 function DashboardConsole({ authUser, onLogout }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(3);
+  const [clearFacialSignal, setClearFacialSignal] = useState(0);
+  const [clearSpeechSignal, setClearSpeechSignal] = useState(0);
+  const [clearCombinedSignal, setClearCombinedSignal] = useState(0);
   const [search, setSearch] = useState('');
   const [dateValue, setDateValue] = useState('');
   const [history, setHistory] = useState([]);
@@ -3657,7 +3906,7 @@ function DashboardConsole({ authUser, onLogout }) {
       row.emotion,
       `${((row.confidence || 0) * 100).toFixed(2)}%`,
       row.explainability || 'none',
-      row.concordance || '-',
+      row.concordance ? `${getConcordanceMetrics(row).categoryLabel} · ${formatConcordanceValue(row)}` : '-',
       (row.note || '').replace(/\n/g, ' ')
     ]);
     const csv = [header, ...rows]
@@ -3729,10 +3978,13 @@ function DashboardConsole({ authUser, onLogout }) {
     const avgConfidence = totalRecords
       ? Math.round((filteredHistory.reduce((sum, row) => sum + Number(row.confidence || 0), 0) / totalRecords) * 100)
       : 0;
+    const avgConcordanceMetrics = getConcordanceMetrics(
+      totalRecords ? filteredHistory.reduce((sum, row) => sum + getConcordanceScore(row), 0) / totalRecords : 0
+    );
     const avgConcordance = totalRecords
       ? Math.round(filteredHistory.reduce((sum, row) => sum + getConcordanceScore(row), 0) / totalRecords)
       : 0;
-    const matchCount = filteredHistory.filter((row) => row.concordance === 'MATCH').length;
+    const matchCount = filteredHistory.filter((row) => getConcordanceMetrics(row).categoryKey === 'MATCH').length;
     const matchRate = totalRecords ? Math.round((matchCount / totalRecords) * 100) : 0;
 
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -3832,7 +4084,7 @@ function DashboardConsole({ authUser, onLogout }) {
 
     drawCard(margin, y, 'Total Sessions', totalRecords, 'Records in selected range');
     drawCard(margin + cardW + cardGap, y, 'Avg Confidence', `${avgConfidence}%`, 'Across all sessions');
-    drawCard(margin + ((cardW + cardGap) * 2), y, 'Avg Concordance', `${avgConcordance}%`, 'Match quality score');
+    drawCard(margin + ((cardW + cardGap) * 2), y, 'Avg Concordance', `${avgConcordanceMetrics.score.toFixed(1)} / ${avgConcordanceMetrics.percent}%`, 'Match quality score');
     drawCard(margin + ((cardW + cardGap) * 3), y, 'Match Rate', `${matchRate}%`, `${matchCount}/${totalRecords} sessions match`);
 
     y += cardH + 16;
@@ -4067,8 +4319,8 @@ function DashboardConsole({ authUser, onLogout }) {
     const bestEmotionInsight = concordancePairs[0] || ['No Data', 0];
     const worstEmotionInsight = concordancePairs[concordancePairs.length - 1] || ['No Data', 0];
 
-    const matchCount = safeHistory.filter((row) => row.concordance === 'MATCH').length;
-    const mismatchCount = safeHistory.filter((row) => row.concordance === 'MISMATCH').length;
+    const matchCount = safeHistory.filter((row) => getConcordanceMetrics(row).categoryKey === 'MATCH').length;
+    const mismatchCount = safeHistory.filter((row) => getConcordanceMetrics(row).categoryKey === 'MISMATCH').length;
 
     const feedbackCards = [
       {
@@ -4120,7 +4372,14 @@ function DashboardConsole({ authUser, onLogout }) {
       <aside className="ga-sidebar" style={{ width: '260px', minWidth: '260px', maxWidth: '260px', flexShrink: 0, margin: 0, padding: 0, marginTop: 0, paddingTop: 0 }}>
         <div className="ga-brand-wrap">
           <div className="ga-brand-top">
-            <img src={logoImage} alt="Multi Modal Emotion Recognition logo" className="ga-brand-logo" />
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              aria-label="Go to landing page"
+              style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+            >
+              <img src={logoImage} alt="Multi Modal Emotion Recognition logo" className="ga-brand-logo" />
+            </button>
           </div>
           <div className="ga-brand-subtitle">Multi Modal Emotion Recognition</div>
         </div>
@@ -4151,7 +4410,7 @@ function DashboardConsole({ authUser, onLogout }) {
             <div className="ga-user-avatar">{profileInitials}</div>
             <div className="ga-user-email">{authUser.email}</div>
           </div>
-          <button className="ga-text-btn" onClick={() => navigate('/')}>Exit</button>
+          <button className="ga-text-btn" onClick={async () => onLogout('/')}>Logout</button>
         </div>
       </aside>
 
@@ -4219,17 +4478,44 @@ function DashboardConsole({ authUser, onLogout }) {
                 <h1 className="ga-page-title">{activeTabLabel}</h1>
                 <p className="ga-page-subtitle">{activeDescription}</p>
               </div>
-              <div className="ga-context-chips">
-                <span className="ga-chip">Today: {todayRecords} records</span>
-                <span className="ga-chip">Total: {history.length} records</span>
+              <div className="ga-context-panel">
+                <div className="ga-context-chips">
+                  <span className="ga-chip">Today: {todayRecords} records</span>
+                  <span className="ga-chip">Total: {history.length} records</span>
+                </div>
+                {(activeTab === 1 || activeTab === 2 || activeTab === 3) && (
+                  <button
+                    type="button"
+                    className="ga-next-analysis-btn"
+                    onClick={() => {
+                      if (activeTab === 1) {
+                        setClearFacialSignal((prev) => prev + 1);
+                        return;
+                      }
+                      if (activeTab === 2) {
+                        setClearSpeechSignal((prev) => prev + 1);
+                        return;
+                      }
+                      setClearCombinedSignal((prev) => prev + 1);
+                    }}
+                  >
+                    Clear Current Analysis
+                  </button>
+                )}
               </div>
             </div>
           )}
 
           {activeTab === 0 && <OverviewTab history={history} analytics={analytics} />}
-          {activeTab === 1 && <div className="ga-card ga-tab-shell"><FacialTab onResult={addHistoryRecord} /></div>}
-          {activeTab === 2 && <div className="ga-card ga-tab-shell"><SpeechTab onResult={addHistoryRecord} /></div>}
-          {activeTab === 3 && <div className="ga-card ga-tab-shell"><CombinedTab onResult={addHistoryRecord} /></div>}
+          <div className="ga-card ga-tab-shell" style={{ display: activeTab === 1 ? 'block' : 'none' }}>
+            <FacialTab onResult={addHistoryRecord} clearSignal={clearFacialSignal} />
+          </div>
+          <div className="ga-card ga-tab-shell" style={{ display: activeTab === 2 ? 'block' : 'none' }}>
+            <SpeechTab onResult={addHistoryRecord} clearSignal={clearSpeechSignal} />
+          </div>
+          <div className="ga-card ga-tab-shell" style={{ display: activeTab === 3 ? 'block' : 'none' }}>
+            <CombinedTab onResult={addHistoryRecord} clearSignal={clearCombinedSignal} />
+          </div>
           {activeTab === 8 && <div className="ga-card ga-tab-shell"><CompareSessionsTab analytics={analytics} history={history} /></div>}
           {activeTab === 4 && <div className="ga-card ga-tab-shell"><ModelInfoTab /></div>}
           {activeTab === 9 && <div className="ga-card ga-tab-shell"><ExportReportTab onExportCsv={exportHistoryCsv} onExportSummary={exportSummaryReport} analytics={analytics} /></div>}
@@ -4316,9 +4602,14 @@ function AppRouter() {
   };
 
   const handleLogout = async (redirectTo = '/') => {
-    await supabase.auth.signOut();
-    setAuthUser(null);
-    navigate(redirectTo, { replace: true });
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      setAuthUser(null);
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+      window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+      navigate(redirectTo, { replace: true });
+    }
   };
 
   const isAuthenticated = Boolean(authUser?.email);

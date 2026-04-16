@@ -923,6 +923,13 @@ html[data-theme='light'] .ga-brand-logo {
   gap: 8px;
 }
 
+.ga-context-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
 .ga-chip {
   display: inline-flex;
   align-items: center;
@@ -934,6 +941,25 @@ html[data-theme='light'] .ga-brand-logo {
   color: var(--sb-accent);
   background: rgba(29, 78, 216, 0.1);
   font-weight: 500;
+}
+
+.ga-next-analysis-btn {
+  height: 38px;
+  border: 1px solid rgba(45, 212, 191, 0.45);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(6, 95, 70, 0.42) 0%, rgba(8, 145, 178, 0.35) 100%);
+  color: #d9fff7;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 14px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.ga-next-analysis-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(45, 212, 191, 0.75);
+  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.22);
 }
 
 .ga-card,
@@ -1500,6 +1526,10 @@ html[data-theme='light'] .ga-brand-logo {
   color: #4ade80;
 }
 
+.ga-compare-score.partial {
+  color: #facc15;
+}
+
 .ga-compare-score.bad {
   color: #f87171;
 }
@@ -1968,6 +1998,10 @@ select {
     flex-direction: column;
   }
 
+  .ga-context-panel {
+    align-items: flex-start;
+  }
+
   .ga-kpi-grid {
     grid-template-columns: 1fr;
     gap: 14px;
@@ -2256,6 +2290,12 @@ html:not([data-theme='light']) .ga-chip {
   color: #bfeeff;
 }
 
+html:not([data-theme='light']) .ga-next-analysis-btn {
+  height: 40px;
+  font-size: 14px;
+  border-color: rgba(45, 212, 191, 0.5);
+}
+
 html:not([data-theme='light']) .ga-card,
 html:not([data-theme='light']) .ga-kpi-card {
   border: 1px solid rgba(103, 232, 249, 0.14);
@@ -2340,6 +2380,14 @@ html[data-theme='light'] .ga-chip {
   color: #173d7a;
   border-color: #c8d6f0;
   background: rgba(29, 78, 216, 0.12);
+}
+
+html[data-theme='light'] .ga-next-analysis-btn {
+  height: 40px;
+  font-size: 14px;
+  border-color: rgba(13, 148, 136, 0.45);
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.12) 0%, rgba(8, 145, 178, 0.14) 100%);
+  color: #0f4a53;
 }
 
 html[data-theme='light'] .ga-nav-item {
