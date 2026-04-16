@@ -367,6 +367,8 @@ class VideoProcessor:
         
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0 or fps > 120:
+            fps = 30.0
         
         frame_count = 0
         while cap.isOpened():
@@ -785,22 +787,36 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
 
                 if frames and facial_emotion != "unknown":
                     try:
-                        # Run GradCAM on the single best frame (highest confidence)
-                        best_frame = frames[0]
+                        # Run GradCAM on the best frame that predicted the aggregated facial_emotion
+                        best_frame = None
                         best_result = None
                         best_conf = 0
                         for frame in frames[:10]:
                             r = predict_facial_emotion(frame)
-                            if r and r.get("confidence", 0) > best_conf:
+                            # Find the frame that predicted the aggregated emotion with highest confidence
+                            if r and r.get("emotion") == facial_emotion and r.get("confidence", 0) > best_conf:
                                 best_conf = r["confidence"]
                                 best_frame = frame
                                 best_result = r
 
+                        # If no frame predicted the aggregated emotion, use the first frame
+                        if best_frame is None and frames:
+                            best_frame = frames[0]
+                            best_result = predict_facial_emotion(best_frame)
+
                         if best_frame is not None:
                             top_idx = EMOTIONS_FACIAL.index(facial_emotion) \
                                 if facial_emotion in EMOTIONS_FACIAL else 0
+                            # Crop face before passing to GradCAM
+                            face_box, _ = _detect_primary_face(best_frame)
+                            if face_box is not None:
+                                frame_array = np.array(best_frame)
+                                face_crop_array, _ = _crop_face_with_margin(frame_array, face_box)
+                                gradcam_input = Image.fromarray(face_crop_array) if face_crop_array.size > 0 else best_frame
+                            else:
+                                gradcam_input = best_frame
                             orig_b64, heatmap_b64 = generate_grad_cam(
-                                best_frame, vit_model, facial_processor,
+                                gradcam_input, vit_model, facial_processor,
                                 top_idx, EMOTIONS_FACIAL, DEVICE
                             )
                             if heatmap_b64:
@@ -810,6 +826,32 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
                                 facial_exp_status["error"] = "GradCAM returned empty output"
                     except Exception as e:
                         facial_exp_status["error"] = str(e)
+                else:
+                    facial_exp_status["error"] = "No valid frame prediction found for facial explainability"
+
+                if speech_result and speech_emotion != "unknown":
+                    try:
+                        top_idx = EMOTIONS_SPEECH.index(speech_emotion) \
+                            if speech_emotion in EMOTIONS_SPEECH else 0
+                        audio_for_xai = _trim_audio_window(audio, sr, max_seconds=MAX_SPEECH_XAI_SECONDS)
+                        spec_b64, saliency_b64 = generate_audio_saliency(
+                            audio_for_xai,
+                            speech_model,
+                            speech_processor,
+                            top_idx,
+                            EMOTIONS_SPEECH,
+                            DEVICE,
+                            sr=16000
+                        )
+                        if spec_b64:
+                            explainability["waveform"] = spec_b64
+                        if saliency_b64:
+                            explainability["saliency"] = saliency_b64
+                            speech_exp_status["generated"] = True
+                        else:
+                            speech_exp_status["error"] = "Audio saliency map returned empty output"
+                    except Exception as e:
+                        speech_exp_status["error"] = str(e)
                 else:
                     speech_exp_status["error"] = "No valid audio prediction found for explainability"
 
