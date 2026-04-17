@@ -23,5 +23,3 @@ RUN pip install --no-cache-dir --timeout=300 --retries=5 -r requirements.txt && 
     pip install --no-cache-dir --timeout=300 opencv-python-headless>=4.10.0
 
 COPY . .
-
-CMD ["/bin/sh", "-c", "gunicorn backend.main:app -w 1 -k uvicorn.workers.UvicornWorker --timeout 600 --bind 0.0.0.0:$PORT"]
