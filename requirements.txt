@@ -40,3 +40,4 @@ supabase>=2.0.0
 
 # HuggingFace
 huggingface_hub>=0.24.0
+grad-cam
