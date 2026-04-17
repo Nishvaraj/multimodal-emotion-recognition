@@ -3,7 +3,8 @@ aptPkgs = ["libxcb1", "libxcb-render0", "libxcb-shm0", "libxcb-xfixes0"]
 
 [phases.install]
 cmds = [
-  "pip install -r requirements.txt",
-  "pip uninstall -y opencv-python || true",
-  "pip install opencv-python-headless>=4.10.0 --force-reinstall"
+  "python -m venv --copies /opt/venv",
+  ". /opt/venv/bin/activate && pip install -r requirements.txt",
+  ". /opt/venv/bin/activate && pip uninstall -y opencv-python || true",
+  ". /opt/venv/bin/activate && pip install opencv-python-headless>=4.10.0 --force-reinstall"
 ]
