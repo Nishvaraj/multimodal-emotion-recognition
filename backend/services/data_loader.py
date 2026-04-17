@@ -45,6 +45,9 @@ class FER2013Dataset(Dataset):
                     img_path = os.path.join(emotion_dir, img_file)
                     self.samples.append((img_path, self.emotion2idx[emotion]))
 
+            # Stable ordering keeps experiments reproducible across runs.
+            self.samples.sort(key=lambda item: item[0])
+
     def __len__(self):
         return len(self.samples)
 
@@ -166,6 +169,7 @@ def create_dataloaders(
     dataloaders = {}
 
     if fer2013_dir and os.path.exists(fer2013_dir):
+        # FER2013 is split into train/test folders and exposed as two separate loaders.
         train_dataset = FER2013Dataset(fer2013_dir, split='train', transform=transform)
         test_dataset = FER2013Dataset(fer2013_dir, split='test', transform=transform)
 
@@ -177,6 +181,7 @@ def create_dataloaders(
         )
 
     if ravdess_dir and os.path.exists(ravdess_dir):
+        # RAVDESS loader provides one shuffled stream for speech model training.
         audio_dataset = RAVDESSDataset(ravdess_dir)
         dataloaders['ravdess'] = DataLoader(
             audio_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers

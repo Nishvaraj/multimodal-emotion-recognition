@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 from backend.services.explainability import generate_grad_cam, generate_audio_saliency
 
 ENV = os.getenv("ENV", "development")
+# Keep backward compatibility with older env naming used during previous Vercel integration.
 FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     os.getenv("REACT_APP_VERCEL_URL", "http://localhost:3000")
@@ -340,12 +341,14 @@ def load_speech_model():
 
 
 def ensure_facial_model_loaded() -> bool:
+    # Lightweight guard to avoid reloading the model on every request.
     if vit_model is not None and facial_processor is not None:
         return True
     return load_facial_model()
 
 
 def ensure_speech_model_loaded() -> bool:
+    # Lightweight guard to avoid reloading the model on every request.
     if speech_model is not None and speech_processor is not None:
         return True
     return load_speech_model()
@@ -561,10 +564,12 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
 
 # ========== API ENDPOINTS ==========
 
+# Root metadata endpoint used by quick uptime checks.
 @app.get("/")
 async def root():
     return {"message": "Multi-Modal Emotion Recognition API v2.0", "status": "active"}
 
+# Health endpoint used by hosting platforms and frontend diagnostics.
 @app.get("/health")
 async def health():
     facial_ready = vit_model is not None and facial_processor is not None
@@ -577,6 +582,7 @@ async def health():
         "device": str(DEVICE)
     }
 
+# Facial image inference endpoint.
 @app.post("/api/predict/facial")
 async def predict_facial(file: UploadFile = File(...), explain: bool = False):
     """Predict emotion from image"""
@@ -593,6 +599,7 @@ async def predict_facial(file: UploadFile = File(...), explain: bool = False):
         logger.error(f"Error in predict_facial: {e}", exc_info=True)
         return JSONResponse(status_code=400, content={"error": str(e)})
 
+# Speech/audio inference endpoint.
 @app.post("/api/predict/speech")
 async def predict_speech(file: UploadFile = File(...), explain: bool = False):
     """Predict emotion from audio"""
@@ -612,6 +619,7 @@ async def predict_speech(file: UploadFile = File(...), explain: bool = False):
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
+# Multimodal endpoint that combines image and audio predictions into a concordance report.
 @app.post("/api/predict/combined")
 async def predict_combined(image_file: UploadFile = File(...), audio_file: UploadFile = File(...), explain: bool = False):
     """Predict emotions from both image and audio, then compare results"""
@@ -732,6 +740,7 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
+# Video endpoint that samples frames plus audio track from one uploaded media file.
 @app.post("/api/predict/video")
 async def predict_video_emotion(file: UploadFile = File(...), explain: bool = False):
     """Predict emotions from video (facial + speech)"""
@@ -894,14 +903,17 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
     except Exception as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
 
+# Reference endpoint for frontend label lists.
 @app.get("/api/emotions/facial")
 async def get_facial_emotions():
     return {"emotions": EMOTIONS_FACIAL}
 
+# Reference endpoint for frontend label lists.
 @app.get("/api/emotions/speech")
 async def get_speech_emotions():
     return {"emotions": EMOTIONS_SPEECH}
 
+# Runtime status endpoint used by dashboard system cards.
 @app.get("/api/models/status")
 async def get_models_status():
     facial_ready = vit_model is not None and facial_processor is not None

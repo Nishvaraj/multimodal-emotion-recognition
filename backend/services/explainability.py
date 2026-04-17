@@ -1,5 +1,6 @@
 """Explainability utilities for multimodal emotion recognition outputs."""
 import os
+# Disable OpenEXR and GUI requirements so OpenCV/Matplotlib work in headless containers.
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "0"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 import torch
@@ -9,6 +10,7 @@ import cv2
 import librosa
 import librosa.display
 import matplotlib
+# Use non-interactive backend for server-side plot rendering.
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from PIL import Image

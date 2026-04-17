@@ -1,3 +1,4 @@
+# Model architecture settings used by training/experimentation scripts.
 model:
   type: 'fusion'
   audio_model:
@@ -11,6 +12,7 @@ model:
       num_layers: 3
       dropout_rate: 0.5
 
+    # Dataset input/output paths for raw assets and preprocessed artifacts.
 data:
   paths:
     raw:
@@ -22,12 +24,14 @@ data:
       audio: 'data/processed/audio/'
       video: 'data/processed/video/'
 
+# Core training hyperparameters.
 training:
   batch_size: 32
   learning_rate: 0.001
   num_epochs: 50
   optimizer: 'adam'
 
+# Evaluation metrics computed after training.
 evaluation:
   metrics:
     - accuracy
@@ -35,6 +39,7 @@ evaluation:
     - recall
     - f1_score
 
+# Logging/checkpoint output configuration.
 logging:
   level: 'info'
   save_dir: 'models/checkpoints/'

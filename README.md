@@ -1,6 +1,6 @@
 # Multi-Modal Emotion Recognition
 
-Multimodal emotion analysis app that predicts facial and speech emotions, compares the two modalities, and stores results in Supabase. The repository includes the FastAPI backend, React frontend, training notebooks, and deployment files for Railway and Vercel.
+Multimodal emotion analysis app that predicts facial and speech emotions, compares the two modalities, and stores results in Supabase. The current deployment architecture uses a FastAPI backend on Hugging Face Spaces (Docker) and a React frontend on Vercel.
 
 ## What The Project Does
 
@@ -90,19 +90,22 @@ npm start
 
 ## Deployment Notes
 
-### Railway Backend
-1. Create a Railway project from this repository.
-2. Set `ENV=production`.
-3. Set `USE_GPU=false` unless the deployment has GPU support.
-4. Set `PRELOAD_MODELS=false` for faster startup on cold deployments.
-5. Set `FRONTEND_URL` to the Vercel domain.
-6. Optionally set `CORS_ORIGINS` to a comma-separated allowlist.
-7. Confirm the health endpoint responds at `/health`.
+### Hugging Face Spaces Backend (Docker)
+1. Use a Docker Space and include `Dockerfile`, `requirements.txt`, and backend source files.
+2. Keep the runtime command bound to the Space port (`7860`) in Docker runtime or startup script.
+3. Set `ENV=production`.
+4. Set `USE_GPU=false` unless the Space hardware includes GPU support.
+5. Set `PRELOAD_MODELS=false` for faster cold starts (or `true` for faster first inference).
+6. Set `FRONTEND_URL` to the Vercel domain.
+7. Optionally set `CORS_ORIGINS` to a comma-separated allowlist.
+8. Add `HF_TOKEN` in Space secrets for higher Hub rate limits and faster model downloads.
+9. Confirm the health endpoint responds at `/health`.
 
 ### Vercel Frontend
 1. Import the repository into Vercel.
 2. Set the root directory to `frontend`.
-3. Configure the frontend environment variables listed above.
+3. Set `REACT_APP_API_BASE` to your Hugging Face Space backend URL.
+4. Configure the remaining frontend environment variables listed above.
 4. Deploy and open the generated Vercel URL.
 
 ### CORS Check
@@ -112,5 +115,6 @@ npm start
 ## Notes For Review
 
 - The backend uses lazy model loading by default to reduce startup cost.
+- First inference can be slower because facial and speech models are loaded on-demand.
 - Webcam and microphone features require browser permissions.
 - Generated artifacts such as cache folders, build outputs, and local environment files are intentionally excluded from version control.

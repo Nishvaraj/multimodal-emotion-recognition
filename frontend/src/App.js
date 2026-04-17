@@ -2359,6 +2359,7 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
   const isSignup = mode === 'signup';
 
   const handleSubmit = async (e) => {
+    // One submit handler supports both login and signup modes.
     e.preventDefault();
     if (!email || !password || (isSignup && !name)) {
       setError('Please fill all required fields.');
@@ -2476,6 +2477,7 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
 
 function MarketingPage({ authUser, onLogout }) {
   const navigate = useNavigate();
+  // Open profile links in a secure new tab from marketing/footer actions.
   const openExternal = (url) => window.open(url, '_blank', 'noopener,noreferrer');
   const linkedinUrl = 'https://www.linkedin.com/in/nishvaraj-k/';
   const githubUrl = 'https://github.com/Nishvaraj';
@@ -2583,6 +2585,7 @@ function MarketingPage({ authUser, onLogout }) {
   const [activeSection, setActiveSection] = useState('architecture');
   const [showUserMenu, setShowUserMenu] = useState(false);
 
+  // Build avatar initials from name/email for the navbar profile chip.
   const profileInitials = (() => {
     const base = authUser?.name || authUser?.email || 'User';
     const pieces = String(base).trim().split(/\s+/).filter(Boolean);
@@ -2591,6 +2594,7 @@ function MarketingPage({ authUser, onLogout }) {
   })();
 
   useEffect(() => {
+    // Typewriter effect for the landing subtitle.
     let i = 0;
     const interval = setInterval(() => {
       if (i <= subtitle.length) {
@@ -2604,6 +2608,7 @@ function MarketingPage({ authUser, onLogout }) {
   }, [subtitle]);
 
   useEffect(() => {
+    // Keep navbar section highlight synced with current scroll position.
     const offset = 64;
     const updateActiveSection = () => {
       const scrollTop = window.scrollY + offset;
@@ -2623,6 +2628,7 @@ function MarketingPage({ authUser, onLogout }) {
   }, [sectionOrder]);
 
   const scrollToSection = (id) => {
+    // Smooth-scroll helper used by header and CTA buttons.
     const section = document.getElementById(id);
     if (section) {
       const top = section.getBoundingClientRect().top + window.scrollY - 18;
@@ -2631,6 +2637,7 @@ function MarketingPage({ authUser, onLogout }) {
   };
 
   useEffect(() => {
+    // Animate synthetic bars/hotspots used in explainability and network visuals.
     const interval = setInterval(() => {
       setAttentionBars((prev) => prev.map((value) => {
         const target = 0.12 + Math.random() * 0.88;
@@ -2646,6 +2653,7 @@ function MarketingPage({ authUser, onLogout }) {
   }, []);
 
   useEffect(() => {
+    // Rotate concordance demo scenarios on a timer.
     const scenarioTimer = setInterval(() => {
       setActiveScenario((index) => (index + 1) % scenarios.length);
     }, 4000);
@@ -2663,6 +2671,7 @@ function MarketingPage({ authUser, onLogout }) {
   }, [dashboardScreenshots.length]);
 
   useEffect(() => {
+    // Trigger one-time reveal animation when sections enter the viewport.
     const sections = [
       { ref: pipelineRef, setVisible: setPipelineVisible },
       { ref: xaiRef, setVisible: setXaiVisible },
@@ -3269,6 +3278,7 @@ function MarketingPage({ authUser, onLogout }) {
 }
 
 function DashboardIcon({ name, className = '' }) {
+  // Central icon switch keeps sidebar and cards visually consistent.
   const iconClass = `ga-glyph ${className}`.trim();
   switch (name) {
     case 'overview':
@@ -3364,6 +3374,7 @@ function DashboardIcon({ name, className = '' }) {
 }
 
 function KpiCard({ title, value, detail, detailClass = '' }) {
+  // Reusable KPI tile used across overview metrics.
   return (
     <article className="ga-kpi-card ga-kpi-summary-card">
       <div className="ga-kpi-title">{title}</div>
@@ -3374,6 +3385,7 @@ function KpiCard({ title, value, detail, detailClass = '' }) {
 }
 
 function ActivityHeatmapCard({ heatmapData }) {
+  // GitHub-style heatmap summarizing analysis activity by day/week.
   return (
     <article className="ga-card ga-heatmap-card w-full max-w-none">
       <h3 className="ga-section-title ga-heatmap-title">Activity Heatmap · Last 12 Weeks</h3>
@@ -3404,6 +3416,7 @@ function ActivityTrendCard({ history }) {
   const maxVolume = Math.max(1, ...weeklyVolumes);
 
   return (
+    // Weekly bars provide a quick volume trend snapshot for recent sessions.
     <article className="ga-card ga-heatmap-card ga-activity-chart-card w-full max-w-none">
       <h3 className="ga-section-title ga-heatmap-title">Session Activity · Last 12 Weeks</h3>
       <div className="ga-activity-bars" role="img" aria-label="Weekly activity bar chart for last 12 weeks">
@@ -3428,6 +3441,7 @@ function ActivityTrendCard({ history }) {
 }
 
 function InsightCard({ icon, title, description }) {
+  // Small narrative card for generated coaching/research insights.
   return (
     <article className="ga-card ga-insight-card">
       <div className="ga-insight-icon">{icon}</div>
@@ -4687,6 +4701,7 @@ function DashboardConsole({ authUser, onLogout }) {
 
 function PublicOnlyRoute({ isAuthenticated, children }) {
   const location = useLocation();
+  // Prevent logged-in users from reopening login/signup routes.
   if (isAuthenticated) {
     return <Navigate to="/" replace state={{ from: location }} />;
   }
@@ -4695,6 +4710,7 @@ function PublicOnlyRoute({ isAuthenticated, children }) {
 
 function ProtectedRoute({ isAuthenticated, children }) {
   const location = useLocation();
+  // Block private routes unless a valid auth session exists.
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
@@ -4707,11 +4723,13 @@ function AppRouter() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Force dark theme as the single supported visual mode.
     document.documentElement.setAttribute('data-theme', 'dark');
     window.localStorage.setItem(THEME_STORAGE_KEY, 'dark');
   }, []);
 
   useEffect(() => {
+    // Initialize auth state and subscribe to Supabase auth changes.
     const initAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -4745,10 +4763,12 @@ function AppRouter() {
   }, []);
 
   const handleAuthSuccess = (user) => {
+    // Shared callback used by login/signup to populate app auth context.
     setAuthUser(user);
   };
 
   const handleLogout = async (redirectTo = '/') => {
+    // Clear Supabase session and local caches before redirect.
     try {
       await supabase.auth.signOut();
     } finally {
@@ -4779,6 +4799,7 @@ function AppRouter() {
   }
 
   return (
+    // Route map for marketing, auth, and protected dashboard areas.
     <Routes>
       <Route
         path="/"
@@ -4816,6 +4837,7 @@ function AppRouter() {
 }
 
 function App() {
+  // Top-level router wrapper.
   return (
     <BrowserRouter>
       <AppRouter />
