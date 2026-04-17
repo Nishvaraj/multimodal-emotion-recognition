@@ -2478,6 +2478,16 @@ function MarketingPage({ authUser, onLogout }) {
   const navigate = useNavigate();
   const openExternal = (url) => window.open(url, '_blank', 'noopener,noreferrer');
   const linkedinUrl = 'https://www.linkedin.com/in/nishvaraj-k/';
+  const githubUrl = 'https://github.com/nishvarajk';
+  const dashboardScreenshots = [
+    '/screenshots/dashboard-1.png',
+    '/screenshots/dashboard-2.png',
+    '/screenshots/dashboard-3.png',
+    '/screenshots/dashboard-4.png',
+    '/screenshots/dashboard-5.png',
+    '/screenshots/dashboard-6.png',
+    '/screenshots/dashboard-7.png'
+  ];
   const subtitle = 'Detecting emotions. Understanding humans.';
   const scenarios = useMemo(() => ([
     {
@@ -2551,6 +2561,7 @@ function MarketingPage({ authUser, onLogout }) {
   ];
 
   const [typedSubtitle, setTypedSubtitle] = useState('');
+  const [activeSlide, setActiveSlide] = useState(0);
   const [attentionBars, setAttentionBars] = useState(() => Array.from({ length: 40 }, () => 0.2 + Math.random() * 0.75));
   const [activeScenario, setActiveScenario] = useState(0);
   const [neuralTick, setNeuralTick] = useState(0);
@@ -2642,6 +2653,14 @@ function MarketingPage({ authUser, onLogout }) {
       clearInterval(scenarioTimer);
     };
   }, [scenarios.length]);
+
+  useEffect(() => {
+    // Auto-advance screenshot slides while keeping manual controls available.
+    const sliderTimer = setInterval(() => {
+      setActiveSlide((index) => (index + 1) % dashboardScreenshots.length);
+    }, 3500);
+    return () => clearInterval(sliderTimer);
+  }, [dashboardScreenshots.length]);
 
   useEffect(() => {
     const sections = [
@@ -2838,6 +2857,82 @@ function MarketingPage({ authUser, onLogout }) {
 
         <section id="architecture" ref={pipelineRef} className="pt-4 pb-20 px-4 scroll-mt-0">
           <div className="max-w-6xl mx-auto space-y-12">
+            <div className="card-glass rounded-2xl p-4 sm:p-6">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-white/45">Dashboard Preview</p>
+                  <h3 className="text-lg sm:text-2xl font-semibold text-white/90">Project Dashboard Screens</h3>
+                </div>
+                <div className="hidden sm:flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label="Previous screenshot"
+                    onClick={() => setActiveSlide((index) => (index - 1 + dashboardScreenshots.length) % dashboardScreenshots.length)}
+                    className="h-9 w-9 rounded-full border border-cyan-300/30 text-cyan-200 hover:bg-cyan-400/10"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Next screenshot"
+                    onClick={() => setActiveSlide((index) => (index + 1) % dashboardScreenshots.length)}
+                    className="h-9 w-9 rounded-full border border-cyan-300/30 text-cyan-200 hover:bg-cyan-400/10"
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative overflow-hidden rounded-xl border border-cyan-300/20 bg-[#091524]">
+                <div
+                  className="flex transition-transform duration-500 ease-out"
+                  style={{ transform: `translateX(-${activeSlide * 100}%)` }}
+                >
+                  {dashboardScreenshots.map((shot, idx) => (
+                    <div key={shot} className="min-w-full">
+                      <img
+                        src={shot}
+                        alt={`Dashboard screenshot ${idx + 1}`}
+                        className="w-full h-[240px] sm:h-[360px] lg:h-[520px] object-contain bg-[#02060d]"
+                        loading={idx === 0 ? 'eager' : 'lazy'}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="absolute inset-x-0 bottom-3 flex justify-center gap-2 px-3">
+                  {dashboardScreenshots.map((_, idx) => (
+                    <button
+                      key={`dot-${idx}`}
+                      type="button"
+                      aria-label={`Go to screenshot ${idx + 1}`}
+                      onClick={() => setActiveSlide(idx)}
+                      className={`h-2.5 rounded-full transition-all ${activeSlide === idx ? 'w-7 bg-cyan-300' : 'w-2.5 bg-white/45 hover:bg-white/70'}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-3 sm:hidden flex justify-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Previous screenshot"
+                  onClick={() => setActiveSlide((index) => (index - 1 + dashboardScreenshots.length) % dashboardScreenshots.length)}
+                  className="px-3 py-1.5 rounded-full border border-cyan-300/30 text-cyan-200 text-sm"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next screenshot"
+                  onClick={() => setActiveSlide((index) => (index + 1) % dashboardScreenshots.length)}
+                  className="px-3 py-1.5 rounded-full border border-cyan-300/30 text-cyan-200 text-sm"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+
             <div className="text-center space-y-3">
               <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-cyan-400/20 text-cyan-300/75 rounded-full">Architecture</p>
               <h2 className="text-4xl md:text-6xl font-bold">How the <span className="shimmer-text">pipeline</span> works</h2>
@@ -3117,6 +3212,17 @@ function MarketingPage({ authUser, onLogout }) {
                 className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 hover:text-cyan-200"
               >
                 LinkedIn Profile
+              </a>
+              <p className="text-xs text-white/45 mt-2">
+                BSc Computer Science (Hons) Final Year Project · University of Westminster · 2026
+              </p>
+              <a
+                href={githubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-cyan-300 hover:text-cyan-200"
+              >
+                GitHub Profile
               </a>
             </div>
             <div className="space-y-2 text-center">
