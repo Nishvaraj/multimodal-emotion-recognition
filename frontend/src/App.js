@@ -6,12 +6,14 @@ import { supabase } from './supabaseClient';
 import { saveAnalysisToSupabase, loadAnalysisHistoryFromSupabase, updateAnalysisNote, toggleAnalysisPin, deleteAnalysisRecord } from './supabaseHistoryService';
 import logoImage from './assets/logo.png';
 
+// ============== MODEL + API CONSTANTS ==============
 const EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
 const EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised'];
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000';
 const MIN_AUDIO_SECONDS = 5;
 const RECOMMENDED_AUDIO_SECONDS = 10;
 
+// ============== MEDIA + UI CONSTANTS ==============
 const AUDIO_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
 const VIDEO_MIME_CANDIDATES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
 const BTN_PRIMARY = 'bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg';
@@ -19,6 +21,7 @@ const BTN_SUCCESS = 'bg-gradient-to-br from-cyan-600 to-blue-700 hover:from-cyan
 const BTN_DANGER = 'bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-medium transition-colors';
 const BTN_NEUTRAL = 'bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg font-medium transition-colors';
 
+// ============== GENERIC HELPERS ==============
 function pickSupportedMimeType(candidates) {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
     return '';
@@ -81,6 +84,7 @@ const CONCORDANCE_CATEGORY_THRESHOLD = {
   matchMin: 7.5
 };
 
+// ============== CONCORDANCE + METRIC HELPERS ==============
 function parseRecordTimestamp(row) {
   const time = new Date(row?.createdAt || 0).getTime();
   return Number.isFinite(time) ? time : 0;
@@ -129,10 +133,6 @@ function getConcordanceCategory(rowOrValue) {
     return { key: 'PARTIAL', label: 'Partial Match' };
   }
   return { key: 'MISMATCH', label: 'Mismatch' };
-}
-
-function getConcordanceScoreFromLabel(label) {
-  return CONCORDANCE_PERCENT_MAP[String(label || '').toUpperCase()] || 0;
 }
 
 function getConcordanceMetrics(rowOrValue) {
@@ -222,6 +222,7 @@ function getSessionDatesSet(history) {
 }
 
 function buildHeatmapData(history) {
+  // Build a compact 12-week grid so the dashboard can render activity density by day.
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const start = new Date(now);
@@ -251,6 +252,7 @@ function buildHeatmapData(history) {
   }
 
   const toLevel = (count) => {
+    // Convert raw counts into one of five visual levels for the heatmap cells.
     if (!count || maxCount === 0) return 0;
     const ratio = count / maxCount;
     if (ratio < 0.25) return 1;
@@ -263,6 +265,7 @@ function buildHeatmapData(history) {
 }
 
 function buildWeeklyVolumeCounts(history) {
+  // Count analyses per week for the volume chart in the dashboard.
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const start = new Date(now);
@@ -287,6 +290,7 @@ function buildWeeklyVolumeCounts(history) {
 }
 
 function buildTrendSeries(history) {
+  // Compute a rolling concordance trend so weekly changes are easy to compare.
   const now = new Date();
   const points = Array.from({ length: 12 }, (_, i) => {
     const end = new Date(now);
@@ -305,6 +309,7 @@ function buildTrendSeries(history) {
 }
 
 function buildWeeklySeries(history, { metric = 'concordance', modality = 'all' } = {}) {
+  // Reuse one builder for concordance, confidence, and volume by switching the metric mode.
   const scopedHistory = modality === 'all'
     ? history
     : history.filter((row) => row.modality === modality);
@@ -361,6 +366,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
   const [faceDetected, setFaceDetected] = useState(false);
 
   const clearCurrentAnalysis = () => {
+    // Reset every piece of facial state so the next analysis starts from a blank slate.
     setError(null);
     setShowGradCAM(false);
     setEmotion(null);
@@ -391,6 +397,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
   }, [isCameraOn]);
 
   const handleImageSelect = (e) => {
+    // Convert the selected file into a previewable data URL while clearing stale results.
     const file = e.target.files[0];
     if (file) {
       setImageFile(file);
@@ -408,6 +415,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
 
   const startCamera = async () => {
     try {
+      // Request camera access only when the user explicitly asks for it.
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       cameraStreamRef.current = stream;
       setIsCameraOn(true);
@@ -419,6 +427,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
 
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
+      // Snapshot the live camera frame into a blob so the backend can analyze it like an upload.
       const ctx = canvasRef.current.getContext('2d');
       ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
       canvasRef.current.toBlob((blob) => {
@@ -447,6 +456,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
       setError('Please select or capture an image');
       return;
     }
+    // Keep the upload/explainability request aligned with the checkbox state.
     setLoading(true);
     setError(null);
     setGradCam(null);
@@ -717,6 +727,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
 
   const startRecording = async () => {
     try {
+      // Record from the microphone only after the user has granted permission.
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       chunksRef.current = [];
@@ -731,6 +742,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
           suppressRecordingOnStopRef.current = false;
           return;
         }
+        // Build a File object so the upload path and recorded path use the same backend contract.
         const recordingDuration = recordingStartedAtRef.current ? (Date.now() - recordingStartedAtRef.current) / 1000 : 0;
         const recorderType = mediaRecorder.mimeType || mimeType || 'audio/webm';
         const audioBlob = new Blob(chunksRef.current, { type: recorderType });
@@ -759,6 +771,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
   };
 
   const clearCurrentAnalysis = () => {
+    // Reset every multimodal result so the next run starts clean.
     setError(null);
     setShowSaliency(false);
     setEmotion(null);
@@ -830,6 +843,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
       setError('Please record or upload audio');
       return;
     }
+    // The explainability checkbox controls whether the saliency map is requested from the backend.
     setLoading(true);
     setError(null);
     setSaliency(null);
@@ -1250,6 +1264,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
   }, [clearSignal]);
 
   const handleImageSelect = (e) => {
+    // Keep image selection simple: load a new preview and clear stale analysis.
     const file = e.target.files[0];
     if (file) {
       setImageFile(file);
@@ -1290,6 +1305,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
 
   const startImageCamera = async () => {
     try {
+      // Keep image capture separate from audio so the combined flow remains explicit.
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       imageCameraStreamRef.current = stream;
       setIsCameraOn(true);
@@ -1312,6 +1328,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
 
   const captureImage = () => {
     if (!imageVideoRef.current || !imageCanvasRef.current) return;
+    // Convert the webcam frame into a File so the combined endpoint receives the same payload type as uploads.
     const ctx = imageCanvasRef.current.getContext('2d');
     ctx.drawImage(imageVideoRef.current, 0, 0, imageCanvasRef.current.width, imageCanvasRef.current.height);
     imageCanvasRef.current.toBlob((blob) => {
@@ -1330,6 +1347,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
 
   const startAudioRecording = async () => {
     try {
+      // Record audio independently so the multimodal workflow can run without a video upload.
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
       audioChunksRef.current = [];
@@ -1343,6 +1361,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
           suppressAudioOnStopRef.current = false;
           return;
         }
+        // Package the recorded clip into a File object for the backend upload route.
         const recordingDuration = audioRecordingStartedAtRef.current ? (Date.now() - audioRecordingStartedAtRef.current) / 1000 : 0;
         if (recordingDuration < MIN_AUDIO_SECONDS) {
           setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
@@ -1395,6 +1414,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
     return;
   }
   try {
+    // Request combined camera + microphone access only when the user selects video mode.
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: true
@@ -1449,7 +1469,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
     if (videoRecorderRef.current && isVideoRecording) {
       videoRecorderRef.current.stop();
       setIsVideoRecording(false);
-      // Stop stream so black box disappears immediately
+      // Stop the stream so the live preview shuts down immediately and releases devices.
       if (videoStreamRef.current) {
         videoStreamRef.current.getTracks().forEach((track) => track.stop());
         videoStreamRef.current = null;
@@ -1466,6 +1486,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
       setError('Please provide both image and audio');
       return;
     }
+    // Send both files together so the backend can calculate concordance from the two modalities.
     setLoading(true);
     setError(null);
     setGradCam(null);

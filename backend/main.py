@@ -1,3 +1,5 @@
+"""FastAPI backend for multimodal (facial + speech) emotion inference."""
+
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,13 +15,12 @@ from transformers import AutoImageProcessor, AutoModelForImageClassification, Au
 from huggingface_hub import hf_hub_download
 import tempfile
 import os
-import sys
 import logging
 from threading import Lock
 from dotenv import load_dotenv
 
 try:
-    from facenet_pytorch import MTCNN
+    from facenet_pytorch import MTCNN  # type: ignore[import-not-found]
 except Exception:
     MTCNN = None
 
@@ -33,11 +34,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add services to path
-sys.path.insert(0, str(Path(__file__).parent))
-
-# Import explainability module
-from services.explainability import generate_grad_cam, generate_audio_saliency, create_combined_visualization
+# Explainability helpers
+from backend.services.explainability import generate_grad_cam, generate_audio_saliency
 
 ENV = os.getenv("ENV", "development")
 FRONTEND_URL = os.getenv(
@@ -80,7 +78,7 @@ logger.info(
     HAAR_MIN_SIZE,
 )
 
-# Configuration
+# Runtime configuration
 EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
 DEVICE = torch.device('cuda' if (torch.cuda.is_available() and USE_GPU) else 'cpu')
@@ -93,7 +91,7 @@ CONCORDANCE_SCORE_MAP = {
     'UNKNOWN': 0,
 }
 
-# Model storage
+# In-memory model state
 vit_model = None
 facial_processor = None
 speech_model = None
@@ -119,16 +117,15 @@ logger.info(f"Speech model path: {SPEECH_MODEL_PATH}")
 
 
 def _upload_suffix(filename: str, default_suffix: str) -> str:
+    # Preserve the original extension when the browser provides one, otherwise fall back to a safe default.
     suffix = Path(filename or '').suffix.lower()
     return suffix if suffix else default_suffix
 
 
-def _concordance_score(label: str | None) -> int:
-    return CONCORDANCE_SCORE_MAP.get((label or 'UNKNOWN').upper(), 0)
-
-
 def _calculate_concordance(facial_emotion, speech_emotion, facial_confidence, speech_confidence):
+    # Match/partial/mismatch is derived from whether both models agree and how confident they are.
     if facial_emotion == speech_emotion:
+        # When the modalities agree, the average confidence controls the concordance band.
         score = (facial_confidence + speech_confidence) / 2
         if score > 0.7:
             concordance = "MATCH"
@@ -137,7 +134,7 @@ def _calculate_concordance(facial_emotion, speech_emotion, facial_confidence, sp
         else:
             concordance = "MISMATCH"
     else:
-        # Emotions are different - can NEVER be MATCH
+        # Different emotions can never be a full match, so we score by how close the confidences are.
         score = 1 - abs(facial_confidence - speech_confidence)
         if score >= 0.5:
             concordance = "PARTIAL"
@@ -161,16 +158,13 @@ def _encode_image_base64(image_array: np.ndarray) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def _decode_image_base64(image_b64: str) -> np.ndarray:
-    raw = base64.b64decode(image_b64)
-    return np.array(Image.open(BytesIO(raw)).convert('RGB'))
-
-
 def _detect_primary_face(image: Image.Image):
+    # Prefer MTCNN when available because it gives stronger boxes and landmark points.
     if MTCNN_DETECTOR is not None:
         try:
             boxes, probs, points = MTCNN_DETECTOR.detect(image, landmarks=True)
             if boxes is not None and len(boxes) > 0:
+                # Use the highest-probability detection when multiple faces appear.
                 best_idx = int(np.argmax(probs)) if probs is not None else 0
                 x1, y1, x2, y2 = boxes[best_idx]
                 # Convert from [x1,y1,x2,y2] to [x,y,w,h]
@@ -179,6 +173,7 @@ def _detect_primary_face(image: Image.Image):
         except Exception as e:
             logger.debug(f"MTCNN face detection fallback: {e}")
 
+    # Haar cascade is the fallback path so the app still works without facenet-pytorch.
     img_array = np.array(image)
     gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
     faces = FACE_CASCADE.detectMultiScale(
@@ -202,6 +197,7 @@ def _rotate_image_to_level(image: Image.Image, points) -> Image.Image:
         return image
 
     try:
+        # Estimate head tilt from the eye landmarks and keep the correction bounded.
         left_eye, right_eye = points[0], points[1]
         angle = np.degrees(np.arctan2(right_eye[1] - left_eye[1], right_eye[0] - left_eye[0]))
         if abs(angle) < 1.0:
@@ -217,6 +213,7 @@ def _rotate_image_to_level(image: Image.Image, points) -> Image.Image:
 
 
 def _crop_face_with_margin(image_array: np.ndarray, face_box, margin_ratio: float = 0.12):
+    # Expand the detected face slightly so the classifier keeps some surrounding context.
     x, y, w, h = [int(v) for v in face_box]
     h_img, w_img = image_array.shape[:2]
     mx = int(w * margin_ratio)
@@ -231,6 +228,7 @@ def _crop_face_with_margin(image_array: np.ndarray, face_box, margin_ratio: floa
 
 
 def _shrink_box(face_box, shrink_ratio: float = 0.12):
+    # Draw a tighter outline for annotation so the face box looks cleaner on the preview image.
     x, y, w, h = [int(v) for v in face_box]
     dx = int(w * shrink_ratio / 2)
     dy = int(h * shrink_ratio / 2)
@@ -242,6 +240,7 @@ def _shrink_box(face_box, shrink_ratio: float = 0.12):
 
 
 def _trim_audio_window(audio: np.ndarray, sr: int, max_seconds: int) -> np.ndarray:
+    # Long recordings are centered and clipped so inference stays fast and consistent.
     if audio is None or sr <= 0:
         return audio
     max_len = int(sr * max_seconds)
@@ -271,6 +270,7 @@ def load_facial_model():
 
         try:
             logger.info("Loading Facial Emotion Model (ViT)...")
+            # Keep the pretrained ViT backbone but swap in the emotion-class head size.
             facial_processor = AutoImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
             vit_model = AutoModelForImageClassification.from_pretrained(
                 'google/vit-base-patch16-224-in21k',
@@ -279,6 +279,7 @@ def load_facial_model():
                 attn_implementation='eager'
             )
 
+            # Load either a full checkpoint or a plain state_dict depending on how the file was saved.
             checkpoint = torch.load(FACIAL_MODEL_PATH, map_location=DEVICE)
             if 'model_state_dict' in checkpoint:
                 vit_model.load_state_dict(checkpoint['model_state_dict'])
@@ -311,6 +312,7 @@ def load_speech_model():
 
         try:
             logger.info("Loading Speech Emotion Model (HuBERT)...")
+            # Match the pretrained audio backbone to the project-specific emotion label set.
             speech_processor = AutoFeatureExtractor.from_pretrained('facebook/hubert-large-ls960-ft')
             speech_model = AutoModelForAudioClassification.from_pretrained(
                 'facebook/hubert-large-ls960-ft',
@@ -318,6 +320,7 @@ def load_speech_model():
                 ignore_mismatched_sizes=True
             )
 
+            # Support both checkpoint formats used across training experiments.
             checkpoint = torch.load(SPEECH_MODEL_PATH, map_location=DEVICE)
             if 'model_state_dict' in checkpoint:
                 speech_model.load_state_dict(checkpoint['model_state_dict'])
@@ -377,6 +380,7 @@ class VideoProcessor:
                 break
             
             if frame_count % fps_sample == 0:
+                # Sample every Nth frame so we analyze representative facial expressions without processing the full video.
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frames.append(Image.fromarray(frame_rgb))
             
@@ -384,6 +388,7 @@ class VideoProcessor:
         
         cap.release()
         
+        # librosa reads the audio track directly from the same file, giving us a single mono stream for speech inference.
         audio, sr = librosa.load(video_path, sr=16000, mono=True)
         
         return frames, audio, sr, fps
@@ -396,11 +401,14 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
         if not ensure_facial_model_loaded():
             return None
 
+        # Normalize EXIF orientation first so mobile uploads and camera captures behave consistently.
         image = ImageOps.exif_transpose(image).convert('RGB')
         
+        # Detect the most likely face before deciding whether to crop or rotate the input.
         detected = _detect_primary_face(image)
         face_box, face_points = detected if isinstance(detected, tuple) else (None, None)
 
+        # If we have eye landmarks, try a small rotation pass to correct head tilt.
         rotated_image = _rotate_image_to_level(image, face_points)
         if rotated_image is not image:
             rotated_detected = _detect_primary_face(rotated_image)
@@ -415,11 +423,13 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
 
         model_image = image
 
+        # Crop to the detected face when possible so the classifier sees the most relevant region.
         if face_box is not None:
             face_crop, _ = _crop_face_with_margin(input_array, face_box)
             if face_crop.size > 0:
                 model_image = Image.fromarray(face_crop)
 
+        # Draw the face box on the preview image to make the detection step visible to the user.
         annotated = input_array.copy()
         if face_box is not None:
             x, y, w, h = _shrink_box(face_box, shrink_ratio=0.08)
@@ -439,6 +449,7 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
         with torch.no_grad():
             outputs = vit_model(**inputs)
             logits = outputs.logits.cpu().numpy()[0]
+            # Convert raw logits into probabilities for easier interpretation in the UI.
             probs = torch.softmax(torch.from_numpy(logits), dim=0).numpy()
         
         top_idx = np.argmax(probs)
@@ -455,6 +466,7 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
             result["face_box"] = {"x": x, "y": y, "width": w, "height": h}
         
         if generate_explainability:
+            # Explainability is optional because Grad-CAM adds compute cost.
             result["explainability_status"] = {
                 "requested": True,
                 "generated": False,
@@ -492,6 +504,7 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
             return None
         
         if sr != 16000:
+            # Resample every input to the model's expected sampling rate.
             audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
 
         # Keep inference fast and stable for long recordings.
@@ -501,6 +514,7 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
         with torch.no_grad():
             outputs = speech_model(inputs['input_values'].to(DEVICE))
             logits = outputs.logits.cpu().numpy()[0]
+            # Softmax keeps the output distribution easy to display and compare.
             probs = np.exp(logits) / np.sum(np.exp(logits))
         
         top_idx = np.argmax(probs)
@@ -511,6 +525,7 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
         }
         
         if generate_explainability:
+            # Saliency is computed on a shorter slice to avoid long XAI runs on large clips.
             result["explainability_status"] = {
                 "requested": True,
                 "generated": False,
@@ -630,6 +645,7 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
             speech_confidence,
         )
         
+        # The combined label should prefer the more confident modality when both are present.
         combined_emotion = None
         combined_confidence = 0.0
         
@@ -673,6 +689,7 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
         }
         
         if explain:
+            # Keep the response shape stable even when one modality fails to generate XAI output.
             explainability = {}
             errors = []
 

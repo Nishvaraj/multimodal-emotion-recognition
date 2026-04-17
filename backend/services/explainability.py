@@ -1,6 +1,4 @@
-"""
-Explainability module for Multimodal Emotion Recognition.
-"""
+"""Explainability utilities for multimodal emotion recognition outputs."""
 
 import torch
 import torch.nn as nn
@@ -14,22 +12,24 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from io import BytesIO
 import base64
-from typing import Tuple, Optional
 
 from pytorch_grad_cam import GradCAM, EigenCAM
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from pytorch_grad_cam.utils.reshape_transforms import vit_reshape_transform
 
 
+# ==================== MODEL WRAPPER ====================
 class ViTLogitsWrapper(nn.Module):
     def __init__(self, model):
         super().__init__()
         self.model = model
 
     def forward(self, x):
+        # Grad-CAM expects a standard forward() that returns logits for the selected class.
         return self.model(pixel_values=x).logits
 
 
+# ==================== FACIAL EXPLAINABILITY ====================
 def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, device):
     try:
         img_rgb = np.array(image.convert('RGB'))
@@ -42,8 +42,7 @@ def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, devic
         wrapped_model = ViTLogitsWrapper(model)
         wrapped_model.eval()
 
-        # Try multiple layers — earlier layers have better gradient flow
-        # when the model is very high confidence
+        # Try multiple layers because the last block can become too saturated for a usable heatmap.
         layers_to_try = [
             model.vit.encoder.layer[-1].layernorm_after,
             model.vit.encoder.layer[-2].layernorm_after,
@@ -64,7 +63,7 @@ def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, devic
                 grayscale_cam = cam(input_tensor=input_tensor, targets=targets)
                 result        = grayscale_cam[0]
 
-                # Only accept if it has actual variance (not all zeros)
+                # Reject degenerate maps so the UI never shows a blank explanation as if it were valid.
                 if result.max() > 0.01:
                     cam_map     = result
                     method_used = f"GradCAM (encoder block {12 - (i+1)})"
@@ -75,7 +74,7 @@ def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, devic
             except Exception as e:
                 print(f"[explainability] GradCAM layer[-{i+1}] failed: {e}")
 
-        # Final fallback: EigenCAM (PCA-based, always produces non-zero output)
+        # Final fallback: EigenCAM gives a stable PCA-based map when gradients are unhelpful.
         if cam_map is None:
             print("[explainability] All GradCAM layers zero, using EigenCAM")
             try:
@@ -93,7 +92,7 @@ def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, devic
 
         print(f"[explainability] {method_used} — min={cam_map.min():.3f}, max={cam_map.max():.3f}")
 
-        # Upscale + smooth
+        # Upscale and smooth the heatmap so it overlays cleanly on the source image.
         cam_resized = cv2.resize(cam_map.astype(np.float32), (w, h), interpolation=cv2.INTER_CUBIC)
         cam_resized = cv2.GaussianBlur(cam_resized, (13, 13), 0)
 
@@ -101,7 +100,7 @@ def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, devic
         if c_max > c_min:
             cam_resized = (cam_resized - c_min) / (c_max - c_min)
 
-        # Build overlay
+        # Build the colored overlay and blend only the most salient regions.
         cam_uint8   = np.uint8(255 * cam_resized)
         heatmap_bgr = cv2.applyColorMap(cam_uint8, cv2.COLORMAP_JET)
         heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
@@ -130,11 +129,13 @@ def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, devic
         return None, None
 
 
+# ==================== AUDIO EXPLAINABILITY ====================
 def generate_audio_saliency(audio, model, processor, emotion_idx, emotions_list, device, sr=16000):
     try:
         if audio is None or len(audio) == 0:
             raise ValueError("Audio input is empty")
 
+        # Sanitize the audio before passing it into the speech backbone.
         audio = np.asarray(audio, dtype=np.float32)
         audio = np.nan_to_num(audio)
 
@@ -160,6 +161,7 @@ def generate_audio_saliency(audio, model, processor, emotion_idx, emotions_list,
         saliency = saliency.reshape(-1).astype(np.float32)
 
         if saliency.size > 11:
+            # Smooth the gradient spikes so the curve is readable in the plot.
             kernel   = np.ones(11, dtype=np.float32) / 11.0
             saliency = np.convolve(saliency, kernel, mode='same')
 
@@ -169,6 +171,7 @@ def generate_audio_saliency(audio, model, processor, emotion_idx, emotions_list,
         else:
             saliency = np.zeros_like(saliency)
 
+        # Build both the spectrogram and the saliency overlay for a side-by-side explanation.
         S    = librosa.feature.melspectrogram(y=audio, sr=sr, n_mels=128)
         S_db = librosa.power_to_db(S, ref=np.max)
 
@@ -184,6 +187,7 @@ def generate_audio_saliency(audio, model, processor, emotion_idx, emotions_list,
         fig2, (ax2, ax3) = plt.subplots(2, 1, figsize=(10, 5.5), dpi=100,
                                          gridspec_kw={'height_ratios': [3, 1]}, sharex=False)
 
+        # Normalize the spectrogram so the saliency colors stay visible across different recordings.
         S_norm      = (S_db - S_db.min()) / max(S_db.max() - S_db.min(), 1e-8)
         sal_resized = np.interp(np.linspace(0, 1, S_db.shape[1]),
                                 np.linspace(0, 1, saliency.shape[0]), saliency)
@@ -194,6 +198,7 @@ def generate_audio_saliency(audio, model, processor, emotion_idx, emotions_list,
         ax2.set_title(f'Audio Saliency — {emotions_list[emotion_idx]} (bright = important)')
         ax2.set_ylabel('Mel Frequency')
 
+        # Highlight the strongest time steps to give the user a clear peak view.
         peak_thr = np.percentile(sal_resized, 85)
         x = np.arange(len(sal_resized))
         ax3.plot(x, sal_resized, color='#f97316', linewidth=1.5)
@@ -217,8 +222,10 @@ def generate_audio_saliency(audio, model, processor, emotion_idx, emotions_list,
         return None, None
 
 
+# ==================== COMBINED VISUALIZATION ====================
 def create_combined_visualization(grad_cam_base64, saliency_base64, facial_emotion, speech_emotion, concordance):
     try:
+        # Use a soft status tint so the combined report communicates agreement at a glance.
         bg_color = '#d4edda' if concordance == 'MATCH' else '#f8d7da'
         html = f"""
         <div style="display:flex;gap:20px;padding:20px;background:#f5f5f5;border-radius:10px;">

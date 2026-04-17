@@ -1,27 +1,27 @@
-# Dataset Documentation for Multi-Modal Emotion Recognition Project
+# Dataset Notes
 
-This directory contains the datasets used for the combined multimodal emotion recognition project. Facial and speech-only assets are still present as supporting data, and the datasets are organized into two main categories: raw and processed.
+This folder stores dataset documentation and local data organization guidance for the multimodal emotion recognition project.
 
-## Raw Datasets
+## Raw Data
 
-The `raw` directory includes the original datasets that have not been altered or processed. It contains the following subdirectories:
+Raw assets are the original source files used for training and experimentation.
 
-- **ravdess**: RAVDESS audio-visual emotion dataset used for combined analysis workflows.
-- **video**: Contains raw video files used for facial emotion recognition.
-- **fer2013**: FER2013 facial expression dataset with train/test/val splits.
-- **audio**: Contains raw audio files (RAVDESS) used for speech emotion recognition.
+- `ravdess`: audio-visual emotion samples used by the combined workflows.
+- `video`: raw video clips used for facial emotion experiments.
+- `fer2013`: facial expression dataset with train/test/validation splits.
+- `audio`: raw speech samples used for speech emotion experiments.
 
-## Processed Datasets
+## Processed Data
 
-The `processed` directory includes datasets that have been preprocessed and are ready for use in model training. It contains the following subdirectories:
+Processed assets are precomputed or cleaned versions of the raw data.
 
-- **video**: Contains processed video files, which may include resized frames, face crops, and extracted facial features.
-- **audio**: Contains processed audio files, which may include MFCC features and spectrograms extracted from raw audio.
+- `video`: resized frames, cropped faces, or extracted facial features.
+- `audio`: MFCC features, mel-spectrograms, or other prepared audio features.
 
-## Usage
+## Usage Guidance
 
-To utilize the datasets in your training or evaluation processes, ensure that you load the appropriate files from the `processed` directory. The data loaders in the `src/data_loaders` directory are designed to facilitate this process.
+Use the processed folders for model training and evaluation whenever possible. The Python dataset loaders in `backend/services/data_loader.py` match the structure described here.
 
-## Acknowledgments
+## Licensing
 
-Please refer to the individual dataset documentation for any specific licensing or usage restrictions.
+Refer to the upstream dataset licenses and project documentation before reusing the data outside this repository.

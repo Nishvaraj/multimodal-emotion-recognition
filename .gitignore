@@ -55,9 +55,3 @@ logs/
 # Temporary files
 *.tmp
 *.bak
-*.pt
-models/*.pt
-models/*.pt
-frontend/build
-models/*.pt
-.DS_Store

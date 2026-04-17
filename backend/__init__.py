@@ -1,3 +1,1 @@
-"""
-Backend package initialization
-"""
+"""Backend package for the FastAPI emotion recognition service."""

@@ -2,6 +2,7 @@ import { supabase } from './supabaseClient';
 
 // ========== SUPABASE HISTORY OPERATIONS ==========
 
+// Save one analysis row while staying compatible with older table schemas.
 export async function saveAnalysisToSupabase(record) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -64,6 +65,7 @@ export async function saveAnalysisToSupabase(record) {
   }
 }
 
+// Load the current user's history and map it into the frontend shape.
 export async function loadAnalysisHistoryFromSupabase(dateFilter = null) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -116,6 +118,7 @@ export async function loadAnalysisHistoryFromSupabase(dateFilter = null) {
   }
 }
 
+// Update only the free-text note attached to a saved analysis.
 export async function updateAnalysisNote(recordId, note) {
   try {
     const { error } = await supabase
@@ -134,6 +137,7 @@ export async function updateAnalysisNote(recordId, note) {
   }
 }
 
+// Toggle the pinned state for a saved analysis row.
 export async function toggleAnalysisPin(recordId, pinned) {
   try {
     const { error } = await supabase
@@ -152,6 +156,7 @@ export async function toggleAnalysisPin(recordId, pinned) {
   }
 }
 
+// Delete one analysis row from the user's history.
 export async function deleteAnalysisRecord(recordId) {
   try {
     const { error } = await supabase
@@ -172,6 +177,7 @@ export async function deleteAnalysisRecord(recordId) {
 
 // ========== REAL-TIME SUBSCRIPTION ==========
 
+// Listen for history updates so the UI can refresh live.
 export function subscribeToAnalysisHistory(callback) {
   try {
     const subscription = supabase

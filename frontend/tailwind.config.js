@@ -1,7 +1,9 @@
 module.exports = {
+  // Tailwind scans the React source tree for utility classes.
   content: [
     "./src/**/*.{js,jsx,ts,tsx}",
   ],
+  // Custom theme tokens used by the app shell and cards.
   theme: {
     extend: {
       colors: {

@@ -1,15 +1,15 @@
-"""Simplified data loader for emotion recognition datasets - Colab compatible."""
+"""Dataset loaders used by the training and experimentation workflows."""
 
 import os
 import numpy as np
 import cv2
 import librosa
 import torch
-from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from typing import Tuple, List
 
+
+# ==================== FACIAL DATASET ====================
 class FER2013Dataset(Dataset):
     """FER2013 facial emotion dataset loader."""
 
@@ -68,6 +68,7 @@ class FER2013Dataset(Dataset):
         return image, torch.tensor(label, dtype=torch.long)
 
 
+    # ==================== AUDIO DATASET ====================
 class RAVDESSDataset(Dataset):
     """RAVDESS audio emotion dataset loader."""
 
@@ -133,6 +134,7 @@ class RAVDESSDataset(Dataset):
             return torch.zeros(self.n_mfcc, 100), torch.tensor(label, dtype=torch.long)
 
 
+# ==================== DATALOADER FACTORY ====================
 def create_dataloaders(
     fer2013_dir: str = None,
     ravdess_dir: str = None,
