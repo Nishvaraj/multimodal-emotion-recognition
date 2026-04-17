@@ -2478,7 +2478,7 @@ function MarketingPage({ authUser, onLogout }) {
   const navigate = useNavigate();
   const openExternal = (url) => window.open(url, '_blank', 'noopener,noreferrer');
   const linkedinUrl = 'https://www.linkedin.com/in/nishvaraj-k/';
-  const githubUrl = 'https://github.com/nishvarajk';
+  const githubUrl = 'https://github.com/Nishvaraj';
   const dashboardScreenshots = [
     '/screenshots/dashboard-1.png',
     '/screenshots/dashboard-2.png',
@@ -2852,10 +2852,16 @@ function MarketingPage({ authUser, onLogout }) {
                 </div>
               ))}
             </div>
+
+            <div className="mt-6 overflow-x-auto">
+              <p className="text-center whitespace-nowrap text-xs sm:text-sm font-mono uppercase tracking-[0.22em] text-white/55 px-3">
+                Angry • Disgust • Fear • Happy • Neutral • Sad • Surprise • Calm • Fearful • Surprised
+              </p>
+            </div>
           </div>
         </section>
 
-        <section id="architecture" ref={pipelineRef} className="pt-4 pb-20 px-4 scroll-mt-0">
+        <section id="architecture" ref={pipelineRef} className="pt-4 pb-12 sm:pt-4 sm:pb-20 lg:pb-20 px-4 scroll-mt-0">
           <div className="max-w-6xl mx-auto space-y-12">
             <div className="card-glass rounded-2xl p-4 sm:p-6">
               <div className="flex items-center justify-between gap-3 mb-4">
@@ -2893,7 +2899,10 @@ function MarketingPage({ authUser, onLogout }) {
                       <img
                         src={shot}
                         alt={`Dashboard screenshot ${idx + 1}`}
-                        className="w-full h-[240px] sm:h-[360px] lg:h-[520px] object-contain bg-[#02060d]"
+                        className="w-full h-[200px] sm:h-[280px] lg:h-[480px] object-contain bg-[#02060d]"
+                        style={{
+                          maxHeight: window.innerHeight < 600 && window.innerWidth > window.innerHeight ? '180px' : undefined
+                        }}
                         loading={idx === 0 ? 'eager' : 'lazy'}
                       />
                     </div>
@@ -2957,16 +2966,16 @@ function MarketingPage({ authUser, onLogout }) {
             </div>
             <div className="card-glass rounded-2xl p-6">
               <h3 className="text-lg font-semibold text-white/90 mb-3">Pipeline Notes</h3>
-              <div className="grid md:grid-cols-3 gap-4 text-sm text-white/70">
-                <p>Input streams are synchronized before inference to preserve timing consistency.</p>
-                <p>Each modality model contributes confidence and explainability artifacts.</p>
-                <p>Concordance combines both outputs into one interpretable session summary.</p>
-              </div>
+              <ul className="list-disc list-inside space-y-2 text-sm text-white/70">
+                <li>Input streams are synchronized before inference to preserve timing consistency.</li>
+                <li>Each modality model contributes confidence and explainability artifacts.</li>
+                <li>Concordance combines both outputs into one interpretable session summary.</li>
+              </ul>
             </div>
           </div>
         </section>
 
-        <section id="explainability" ref={xaiRef} className="pt-4 pb-20 px-4 scroll-mt-0">
+        <section id="explainability" ref={xaiRef} className="pt-4 pb-12 sm:pt-4 sm:pb-20 lg:pb-20 px-4 scroll-mt-0">
           <div className="max-w-6xl mx-auto space-y-10">
             <div className="text-center space-y-3">
               <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-cyan-400/20 text-cyan-300/75 rounded-full">Explainability</p>
@@ -3025,7 +3034,7 @@ function MarketingPage({ authUser, onLogout }) {
           </div>
         </section>
 
-        <section id="concordance" ref={concordanceRef} className="pt-4 pb-20 px-4 scroll-mt-0">
+        <section id="concordance" ref={concordanceRef} className="pt-4 pb-12 sm:pt-4 sm:pb-20 lg:pb-20 px-4 scroll-mt-0">
           <div className="max-w-6xl mx-auto space-y-10">
             <div className="text-center space-y-3">
               <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-cyan-400/20 text-cyan-300/75 rounded-full">Concordance</p>
@@ -3066,7 +3075,7 @@ function MarketingPage({ authUser, onLogout }) {
           </div>
         </section>
 
-        <section id="performance" ref={performanceRef} className="pt-4 pb-20 px-4 scroll-mt-0">
+        <section id="performance" ref={performanceRef} className="pt-4 pb-12 sm:pt-4 sm:pb-20 lg:pb-20 px-4 scroll-mt-0">
           <div className="max-w-6xl mx-auto space-y-10">
             <div className="text-center space-y-3">
               <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-blue-400/20 text-blue-300/75 rounded-full">Performance</p>
@@ -3150,16 +3159,16 @@ function MarketingPage({ authUser, onLogout }) {
             </div>
             <div className="card-glass rounded-2xl p-6">
               <h3 className="text-lg font-semibold text-white/90 mb-3">Validation Summary</h3>
-              <div className="grid md:grid-cols-3 gap-4 text-sm text-white/70">
-                <p>FER2013 and RAVDESS are used as baseline evaluation datasets.</p>
-                <p>Confidence calibration is tuned to improve session-level reliability.</p>
-                <p>Latency profile targets interactive feedback under 500ms budget.</p>
-              </div>
+              <ul className="list-disc list-inside space-y-2 text-sm text-white/70">
+                <li>FER2013 and RAVDESS are used as baseline evaluation datasets.</li>
+                <li>Confidence calibration is tuned to improve session-level reliability.</li>
+                <li>Latency profile targets interactive feedback under 500ms budget.</li>
+              </ul>
             </div>
           </div>
         </section>
 
-        <section id="applications" className="pt-4 pb-20 px-4 scroll-mt-0">
+        <section id="applications" className="pt-4 pb-12 sm:pt-4 sm:pb-20 lg:pb-20 px-4 scroll-mt-0">
           <div className="max-w-6xl mx-auto space-y-10">
             <div className="text-center space-y-3">
               <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-cyan-400/20 text-cyan-300/75 rounded-full">Applications</p>
@@ -3191,11 +3200,11 @@ function MarketingPage({ authUser, onLogout }) {
             </div>
             <div className="card-glass rounded-2xl p-6">
               <h3 className="text-lg font-semibold text-white/90 mb-3">Deployment Scenarios</h3>
-              <div className="grid md:grid-cols-3 gap-4 text-sm text-white/70">
-                <p>Clinical support dashboards with private on-device inference.</p>
-                <p>Interview and coaching analysis for communication training.</p>
-                <p>Academic and product research workflows with explainable evidence.</p>
-              </div>
+              <ul className="list-disc list-inside space-y-2 text-sm text-white/70">
+                <li>Clinical support dashboards with private on-device inference.</li>
+                <li>Interview and coaching analysis for communication training.</li>
+                <li>Academic and product research workflows with explainable evidence.</li>
+              </ul>
             </div>
           </div>
         </section>
@@ -3235,9 +3244,9 @@ function MarketingPage({ authUser, onLogout }) {
                 <span>React</span>
               </div>
             </div>
-            <div className="space-y-2 text-center md:text-right">
+            <div className="space-y-2 text-center">
               <p className="text-xs uppercase tracking-[0.2em] text-white/45">System Status</p>
-              <div className="flex items-center justify-center md:justify-end gap-2 text-sm text-white/70">
+              <div className="flex items-center justify-center gap-2 text-sm text-white/70">
                 <div className="w-2 h-2 rounded-full bg-cyan-400" />
                 <span>Operational</span>
               </div>

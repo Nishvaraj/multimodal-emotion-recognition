@@ -786,3 +786,456 @@ img {
   outline: 3px solid #1a3a6e;
   outline-offset: 2px;
 }
+
+/* ===== LANDSCAPE MODE RESPONSIVENESS ===== */
+@media (max-height: 600px) and (orientation: landscape) {
+  /* Reduce vertical spacing in landscape */
+  .app-container {
+    margin: 5px;
+    border-radius: 8px;
+  }
+
+  .gradio-header {
+    padding: 15px 20px;
+  }
+
+  .gradio-header h1 {
+    font-size: 1.4em;
+    margin-bottom: 8px;
+  }
+
+  .gradio-header p {
+    font-size: 0.85em;
+    margin-bottom: 8px;
+  }
+
+  .tab-content {
+    padding: 15px 20px;
+  }
+
+  .tab-content h2 {
+    font-size: 1.3em;
+    margin-bottom: 12px;
+  }
+
+  .tab-content h3 {
+    font-size: 1.1em;
+    margin-bottom: 8px;
+  }
+
+  .button-group {
+    gap: 6px;
+    margin: 8px 0;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    font-size: 0.85em;
+  }
+
+  .two-column {
+    gap: 15px;
+    margin-bottom: 15px;
+  }
+
+  .results-grid {
+    gap: 10px;
+  }
+
+  .combined-results {
+    padding: 12px;
+  }
+
+  .emotion-scores {
+    gap: 6px;
+  }
+
+  .score-bar {
+    gap: 8px;
+    font-size: 0.8em;
+    margin: 6px 0;
+  }
+
+  .score-bar span:first-child {
+    min-width: 60px;
+  }
+
+  .emotion-name {
+    font-size: 1.2em;
+  }
+
+  .result-item {
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+}
+
+/* Extra tight spacing for very small landscape screens */
+@media (max-height: 500px) and (orientation: landscape) {
+  .gradio-header {
+    padding: 10px 15px;
+  }
+
+  .gradio-header h1 {
+    font-size: 1.2em;
+    margin-bottom: 5px;
+  }
+
+  .tab-content {
+    padding: 10px 15px;
+  }
+
+  .button-group {
+    gap: 4px;
+    margin: 5px 0;
+  }
+
+  .btn {
+    padding: 6px 10px;
+    font-size: 0.8em;
+  }
+
+  .two-column {
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .emotion-scores {
+    gap: 4px;
+  }
+
+  .result-item {
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+}
+
+/* Landscape specific fixes for content sections */
+@media (orientation: landscape) and (max-width: 896px) {
+  .mmer-nav-logo {
+    width: 32px;
+    height: auto;
+  }
+
+  .mmer-landing section {
+    padding-top: 8px !important;
+    padding-bottom: 12px !important;
+  }
+
+  .card-glass {
+    padding: 12px !important;
+  }
+
+  .space-y-4 > * + * {
+    margin-top: 8px;
+  }
+
+  .space-y-6 > * + * {
+    margin-top: 12px;
+  }
+
+  .space-y-12 > * + * {
+    margin-top: 16px;
+  }
+
+  .grid {
+    gap: 8px;
+  }
+
+  /* Carousel adjustments for landscape */
+  .carousel-container,
+  .carousel-inner {
+    max-height: 280px;
+  }
+
+  /* Reduce heading sizes in landscape */
+  h1, .text-4xl {
+    font-size: 1.5rem;
+  }
+
+  h2, .text-3xl {
+    font-size: 1.3rem;
+  }
+
+  h3, .text-xl {
+    font-size: 1.1rem;
+  }
+
+  /* Tighter spacing for lists */
+  ul, ol {
+    padding-left: 1.25rem;
+  }
+
+  li {
+    margin: 2px 0;
+  }
+
+  /* Reduce padding for input/output sections */
+  .space-y-3 > * + * {
+    margin-top: 6px;
+  }
+
+  .space-y-2 > * + * {
+    margin-top: 4px;
+  }
+
+  /* Optimize video and image heights */
+  video, img {
+    max-height: 280px;
+  }
+
+  /* Better button wrapping in landscape */
+  .flex.flex-wrap.gap-2 {
+    gap: 4px;
+  }
+
+  .flex.gap-2 {
+    gap: 4px;
+  }
+
+  /* Optimize grid for dashboard in landscape */
+  .grid.grid-cols-1.lg\\:grid-cols-2,
+  .grid.md\\:grid-cols-2 {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  /* Reduce card heights in landscape */
+  .rounded-xl.border.border-slate-700 {
+    min-height: auto;
+  }
+
+  /* Compact mode for input sections */
+  .bg-slate-800.rounded-xl.border.border-slate-700 {
+    padding: 12px;
+  }
+
+  .bg-blue-900.px-4.py-2 {
+    padding: 8px 12px;
+  }
+
+  .p-4 {
+    padding: 8px;
+  }
+
+  .px-4.py-2 {
+    padding: 6px 12px;
+  }
+
+  .px-6.py-3 {
+    padding: 8px 16px;
+  }
+}
+
+/* ===== LANDSCAPE OPTIMIZATIONS FOR DASHBOARD ===== */
+@media (orientation: landscape) {
+  /* Optimize main app container for landscape */
+  .ga-main-container {
+    max-height: calc(100vh - 60px);
+    overflow-y: auto;
+  }
+
+  /* Dashboard input/output sections */
+  .space-y-4 > * {
+    margin-bottom: 8px;
+  }
+
+  /* Tab content in landscape */
+  .ga-tab-content {
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+  }
+
+  /* Reduce minimum heights in landscape */
+  div[style*="minHeight: '400px'"],
+  div[style*="min-height"] {
+    min-height: 200px !important;
+  }
+
+  /* Optimize grid layouts */
+  .grid.grid-cols-1.lg\\:grid-cols-2 {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  /* Reduce margins for better space usage */
+  .m-4, .mx-4, .my-4 {
+    margin: 8px;
+  }
+
+  .mb-3, .my-3 {
+    margin-bottom: 6px;
+  }
+
+  .mt-3, .my-3 {
+    margin-top: 6px;
+  }
+
+  .mb-4, .my-4 {
+    margin-bottom: 8px;
+  }
+
+  /* Optimize padding */
+  .p-6 {
+    padding: 12px;
+  }
+
+  .p-4 {
+    padding: 8px;
+  }
+
+  .px-4, .px-6 {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  /* Better text sizing */
+  .text-lg {
+    font-size: 0.95rem;
+  }
+
+  .text-base {
+    font-size: 0.9rem;
+  }
+
+  .text-sm {
+    font-size: 0.8rem;
+  }
+
+  /* Improve scrollability for long lists */
+  .overflow-y-auto {
+    max-height: calc(100vh - 120px);
+  }
+
+  /* Prevent layout shift in landscape */
+  html, body {
+    overflow-x: hidden;
+  }
+
+  /* Optimize button sizing */
+  button {
+    padding: 6px 12px;
+  }
+
+  .px-6.py-3 {
+    padding: 8px 12px;
+  }
+
+  .px-4.py-2 {
+    padding: 6px 10px;
+  }
+}
+
+/* ===== MOBILE LANDSCAPE NAVIGATION FIXES ===== */
+@media (max-height: 600px) and (orientation: landscape) and (max-width: 1024px) {
+  /* Compact header for landscape */
+  nav {
+    padding: 8px 12px !important;
+    height: auto;
+    min-height: 44px;
+  }
+
+  .mmer-nav-logo {
+    width: 28px;
+    height: auto;
+  }
+
+  /* Hide desktop navigation menu items in landscape on small screens */
+  .hidden.md\\:flex {
+    display: none !important;
+  }
+
+  /* Optimize button text */
+  .px-3.py-1\\.5 {
+    padding: 6px 10px;
+    font-size: 0.75rem;
+  }
+
+  /* Main content spacing */
+  main {
+    padding-top: 4px;
+  }
+
+  /* Reduce gap in dashboard sections */
+  .max-w-6xl {
+    margin-left: 8px;
+    margin-right: 8px;
+  }
+
+  /* Optimize carousel for tight landscape */
+  .relative.overflow-hidden.rounded-xl {
+    margin: 0;
+  }
+
+  .absolute.inset-x-0.bottom-3 {
+    bottom: 2px;
+    gap: 4px;
+  }
+
+  .h-2\\.5.rounded-full {
+    height: 2px;
+  }
+
+  .w-7, .w-2\\.5 {
+    width: 3px;
+  }
+
+  /* Tighter container padding */
+  .px-4 {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .px-5 {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+/* ===== PREVENT HORIZONTAL SCROLLING IN LANDSCAPE ===== */
+@media (orientation: landscape) {
+  * {
+    max-width: 100%;
+  }
+
+  body, html {
+    overflow-x: hidden;
+    width: 100%;
+  }
+
+  .mmer-landing {
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  .grid {
+    grid-auto-columns: minmax(0, 1fr);
+  }
+
+  /* Ensure all flex containers work properly */
+  .flex {
+    flex-wrap: wrap;
+  }
+
+  .flex-col {
+    flex-wrap: nowrap;
+  }
+
+  /* Optimize image containers */
+  img, video {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Fix overflow issues */
+  .overflow-x-auto {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Smooth scrolling */
+  .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+}
