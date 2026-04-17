@@ -14,11 +14,16 @@ CREATE TABLE IF NOT EXISTS public.analysis_history (
   probabilities JSONB,
   explainability VARCHAR(50),
   concordance VARCHAR(50),
+  concordance_score FLOAT,
   note TEXT,
   pinned BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Backward-compatible migration for existing tables
+ALTER TABLE public.analysis_history
+ADD COLUMN IF NOT EXISTS concordance_score FLOAT;
 
 -- 3. Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_analysis_history_user_id 

@@ -15,7 +15,7 @@ const RECOMMENDED_AUDIO_SECONDS = 10;
 const AUDIO_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
 const VIDEO_MIME_CANDIDATES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
 const BTN_PRIMARY = 'bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg';
-const BTN_SUCCESS = 'bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg font-medium transition-colors';
+const BTN_SUCCESS = 'bg-gradient-to-br from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors';
 const BTN_DANGER = 'bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-medium transition-colors';
 const BTN_NEUTRAL = 'bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg font-medium transition-colors';
 
@@ -149,7 +149,7 @@ function getConcordanceMetrics(rowOrValue) {
 
 function formatConcordanceValue(rowOrValue) {
   const metrics = getConcordanceMetrics(rowOrValue);
-  return `${metrics.score.toFixed(1)} / ${formatPercent(metrics.percent)}`;
+  return formatPercent(metrics.percent);
 }
 
 function getConcordanceToneClass(categoryKey) {
@@ -172,7 +172,7 @@ function buildConcordanceExplainabilityText({ facialEmotion, speechEmotion, cate
     speechLine: `Speech emotion prediction: ${speechText}`,
     reasoningLine: `Reasoning: ${categoryReason}`,
     categoryLine: `Concordance category: ${categoryLabel}`,
-    scoreLine: `Final score: ${score.toFixed(1)} / ${formatPercent(percent)}`
+    scoreLine: `Final concordance: ${formatPercent(percent)}`
   };
 }
 
@@ -262,6 +262,30 @@ function buildHeatmapData(history) {
   return cells.map((row) => row.map((count) => ({ count, level: toLevel(count) })));
 }
 
+function buildWeeklyVolumeCounts(history) {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const start = new Date(now);
+  start.setDate(now.getDate() - 83);
+
+  const counts = Array(12).fill(0);
+  const msPerDay = 24 * 60 * 60 * 1000;
+
+  history.forEach((row) => {
+    const d = new Date(parseRecordTimestamp(row));
+    d.setHours(0, 0, 0, 0);
+    if (d < start || d > now) return;
+
+    const dayOffset = Math.floor((d.getTime() - start.getTime()) / msPerDay);
+    const weekIndex = Math.floor(dayOffset / 7);
+    if (weekIndex >= 0 && weekIndex < 12) {
+      counts[weekIndex] += 1;
+    }
+  });
+
+  return counts;
+}
+
 function buildTrendSeries(history) {
   const now = new Date();
   const points = Array.from({ length: 12 }, (_, i) => {
@@ -281,6 +305,14 @@ function buildTrendSeries(history) {
 }
 
 function buildWeeklySeries(history, { metric = 'concordance', modality = 'all' } = {}) {
+  const scopedHistory = modality === 'all'
+    ? history
+    : history.filter((row) => row.modality === modality);
+
+  if (metric === 'volume') {
+    return buildWeeklyVolumeCounts(scopedHistory);
+  }
+
   const now = new Date();
   const points = Array.from({ length: 12 }, (_, i) => {
     const end = new Date(now);
@@ -288,16 +320,11 @@ function buildWeeklySeries(history, { metric = 'concordance', modality = 'all' }
     const start = new Date(end);
     start.setDate(end.getDate() - 6);
 
-    const weekRows = history.filter((row) => {
+    const weekRows = scopedHistory.filter((row) => {
       const t = parseRecordTimestamp(row);
       const inWindow = t >= start.getTime() && t <= end.getTime();
-      const modalityMatch = modality === 'all' ? true : row.modality === modality;
-      return inWindow && modalityMatch;
+      return inWindow;
     });
-
-    if (metric === 'volume') {
-      return weekRows.length;
-    }
 
     if (!weekRows.length) {
       return 0;
@@ -311,14 +338,6 @@ function buildWeeklySeries(history, { metric = 'concordance', modality = 'all' }
     const avgConcordance = weekRows.reduce((sum, row) => sum + getConcordanceScore(row), 0) / weekRows.length;
     return Math.round(avgConcordance);
   });
-
-  if (metric === 'volume') {
-    const max = Math.max(...points, 0);
-    if (max === 0) {
-      return points;
-    }
-    return points.map((count) => Math.round((count / max) * 100));
-  }
 
   return points;
 }
@@ -604,7 +623,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
             <div className="p-4 space-y-3">
               <div className="text-center mb-4">
                 <div className="text-2xl font-bold text-slate-50">{formatEmotionLabel(emotion)}</div>
-                <div className="text-lg text-green-400">{(confidence * 100).toFixed(1)}%</div>
+                <div className="text-lg text-cyan-300">{(confidence * 100).toFixed(1)}%</div>
               </div>
               {EMOTIONS_FACIAL.map((emo) => (
                 <div key={emo} className="space-y-1">
@@ -917,7 +936,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
             )}
             {audioFile && !isRecording && (
               <div className="text-center">
-                <div className="text-green-400 text-lg font-semibold mb-3">
+                <div className="text-cyan-300 text-lg font-semibold mb-3">
                   Audio Ready
                 </div>
                 <div className="bg-slate-700 rounded-lg p-4 mb-3">
@@ -1010,7 +1029,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
             <div className="p-4 space-y-3">
               <div className="text-center mb-4">
                 <div className="text-2xl font-bold text-slate-50">{formatEmotionLabel(emotion)}</div>
-                <div className="text-lg text-green-400">{(confidence * 100).toFixed(1)}%</div>
+                <div className="text-lg text-cyan-300">{(confidence * 100).toFixed(1)}%</div>
               </div>
               {EMOTIONS_SPEECH.map((emo) => (
                 <div key={emo} className="space-y-1">
@@ -1487,20 +1506,25 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
           setExplainabilityStatus(response.data.explainability_status);
         }
         if (onResult) {
+          const combinedConcordancePercent = getConcordancePercent(response.data);
+          const combinedConfidence = Number.isFinite(Number(response.data.combined_confidence))
+            ? Number(response.data.combined_confidence)
+            : Math.max(
+              response.data.facial_emotion.confidence || 0,
+              response.data.speech_emotion.confidence || 0
+            );
           onResult({
             id: `combined-${Date.now()}`,
             modality: 'multimodal',
             emotion: `${response.data.facial_emotion.emotion} | ${response.data.speech_emotion.emotion}`,
-            confidence: Math.max(
-              response.data.facial_emotion.confidence || 0,
-              response.data.speech_emotion.confidence || 0
-            ),
+            confidence: combinedConfidence,
             probabilities: {
               facial: response.data.facial_emotion.probabilities,
               speech: response.data.speech_emotion.probabilities
             },
             explainability: response.data.explainability ? 'enabled' : 'none',
             concordance: response.data.concordance,
+            concordance_score: combinedConcordancePercent,
             createdAt: new Date().toISOString(),
             note: '',
             pinned: false
@@ -1571,20 +1595,35 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
         }
 
         if (onResult) {
-          onResult({
-            id: `video-${Date.now()}`,
-            modality: 'multimodal',
-            emotion: `${response.data.combined_emotion || 'unknown'} (video)`,
+          const videoConcordancePercent = getConcordancePercent({
+            concordance: videoConcordance,
+            concordance_score: response.data.concordance_score,
             confidence: Math.max(
               response.data.facial_emotion?.confidence || 0,
               response.data.speech_emotion?.confidence || 0
-            ),
+            )
+          });
+          const videoCombinedEmotion = response.data.combined_emotion || 'unknown';
+          const videoCombinedConfidence = videoCombinedEmotion === face
+            ? Number(response.data.facial_emotion?.confidence || 0)
+            : videoCombinedEmotion === speech
+              ? Number(response.data.speech_emotion?.confidence || 0)
+              : Math.max(
+                Number(response.data.facial_emotion?.confidence || 0),
+                Number(response.data.speech_emotion?.confidence || 0)
+              );
+          onResult({
+            id: `video-${Date.now()}`,
+            modality: 'multimodal',
+            emotion: `${videoCombinedEmotion} (video)`,
+            confidence: videoCombinedConfidence,
             probabilities: {
               facial: response.data.facial_emotion?.probabilities || {},
               speech: response.data.speech_emotion?.probabilities || {}
             },
             explainability: showExplainability ? 'requested' : 'none',
             concordance: videoConcordance,
+            concordance_score: videoConcordancePercent,
             createdAt: new Date().toISOString(),
             note: '',
             pinned: false
@@ -1743,7 +1782,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
             {audioFile && !isAudioRecording && (
               <div className="text-center">
                 <div className="bg-slate-700 rounded-lg p-8 mb-3">
-                  <div className="text-green-400 font-semibold">Audio Loaded</div>
+                  <div className="text-cyan-300 font-semibold">Audio Loaded</div>
                 </div>
                 {audioPreviewUrl && (
                   <audio src={audioPreviewUrl} controls className="w-full mb-3" />
@@ -1933,7 +1972,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
 
               <div className={`rounded-xl border p-4 ${
                 concordanceMetrics.categoryKey === 'MATCH'
-                  ? 'bg-green-900/50 border border-green-700 text-green-200'
+                  ? 'bg-cyan-950/50 border border-cyan-700 text-cyan-100'
                   : concordanceMetrics.categoryKey === 'PARTIAL'
                     ? 'bg-amber-900/50 border border-amber-700 text-amber-200'
                     : concordanceMetrics.categoryKey === 'MISMATCH'
@@ -2167,7 +2206,7 @@ function ModelInfoTab() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Accuracy:</span>
-                  <span className="text-green-400 font-bold">
+                  <span className="text-cyan-300 font-bold">
                     {Number.isFinite(facialAccuracy) ? `${(facialAccuracy * 100).toFixed(2)}%` : 'N/A'}
                   </span>
                 </div>
@@ -2200,7 +2239,7 @@ function ModelInfoTab() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Accuracy:</span>
-                  <span className="text-green-400 font-bold">
+                  <span className="text-cyan-300 font-bold">
                     {Number.isFinite(speechAccuracy) ? `${(speechAccuracy * 100).toFixed(2)}%` : 'N/A'}
                   </span>
                 </div>
@@ -2231,13 +2270,13 @@ function ModelInfoTab() {
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Facial Model Status:</span>
-              <span className={`${modelStatus?.facial?.loaded ? 'text-green-400' : 'text-amber-300'} font-medium`}>
+              <span className={`${modelStatus?.facial?.loaded ? 'text-cyan-300' : 'text-amber-300'} font-medium`}>
                 {modelStatus?.facial?.loaded ? 'Loaded' : 'Unavailable'}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-slate-400">Speech Model Status:</span>
-              <span className={`${modelStatus?.speech?.loaded ? 'text-green-400' : 'text-amber-300'} font-medium`}>
+              <span className={`${modelStatus?.speech?.loaded ? 'text-cyan-300' : 'text-amber-300'} font-medium`}>
                 {modelStatus?.speech?.loaded ? 'Loaded' : 'Unavailable'}
               </span>
             </div>
@@ -2417,7 +2456,7 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
 function MarketingPage({ authUser, onLogout }) {
   const navigate = useNavigate();
   const openExternal = (url) => window.open(url, '_blank', 'noopener,noreferrer');
-  const linkedinUrl = 'https://www.linkedin.com/in/nishvaraj/';
+  const linkedinUrl = 'https://www.linkedin.com/in/nishvaraj-k/';
   const subtitle = 'Detecting emotions. Understanding humans.';
   const scenarios = useMemo(() => ([
     {
@@ -3007,7 +3046,7 @@ function MarketingPage({ authUser, onLogout }) {
         <section id="applications" className="pt-4 pb-20 px-4 scroll-mt-0">
           <div className="max-w-6xl mx-auto space-y-10">
             <div className="text-center space-y-3">
-              <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-green-400/20 text-green-300/75 rounded-full">Applications</p>
+              <p className="inline-block px-3 py-1 text-xs font-mono tracking-[0.3em] uppercase border border-cyan-400/20 text-cyan-300/75 rounded-full">Applications</p>
               <h2 className="text-4xl md:text-6xl font-bold">Built for <span className="shimmer-text">impact</span></h2>
               <p className="text-white/70 max-w-2xl mx-auto text-base">From clinical research to personal development, analyze emotional authenticity with confidence.</p>
             </div>
@@ -3221,6 +3260,37 @@ function ActivityHeatmapCard({ heatmapData }) {
   );
 }
 
+function ActivityTrendCard({ history }) {
+  const weeklyVolumes = useMemo(
+    () => buildWeeklySeries(history, { metric: 'volume', modality: 'all' }),
+    [history]
+  );
+  const maxVolume = Math.max(1, ...weeklyVolumes);
+
+  return (
+    <article className="ga-card ga-heatmap-card ga-activity-chart-card w-full max-w-none">
+      <h3 className="ga-section-title ga-heatmap-title">Session Activity · Last 12 Weeks</h3>
+      <div className="ga-activity-bars" role="img" aria-label="Weekly activity bar chart for last 12 weeks">
+        {weeklyVolumes.map((value, idx) => {
+          const height = value === 0 ? 0 : Math.max(2, Math.round((value / maxVolume) * 100));
+          return (
+            <div key={`wk-${idx}`} className="ga-activity-col" title={`Week ${idx + 1}: ${value} sessions`}>
+              <div className="ga-activity-bar-wrap">
+                <div className="ga-activity-bar" style={{ height: `${height}%` }} />
+              </div>
+              <div className="ga-activity-value">{value}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="ga-heatmap-scale">
+        <span>12 weeks ago</span>
+        <span>This week</span>
+      </div>
+    </article>
+  );
+}
+
 function InsightCard({ icon, title, description }) {
   return (
     <article className="ga-card ga-insight-card">
@@ -3263,7 +3333,10 @@ function OverviewTab({ history, analytics }) {
         <KpiCard title="Streak" value={String(streakDays)} detail="days in a row" />
       </section>
 
-      <ActivityHeatmapCard heatmapData={heatmapData} />
+      <section className="ga-overview-top-grid">
+        <ActivityHeatmapCard heatmapData={heatmapData} />
+        <ActivityTrendCard history={history} />
+      </section>
 
       <section className="ga-insights-grid grid grid-cols-1 md:grid-cols-3 gap-4">
         <InsightCard
@@ -3295,6 +3368,14 @@ function EmotionTrendsTab({ analytics, history }) {
     [history, selectedMetric, selectedModality]
   );
 
+  // Keep true weekly counts for volume, but normalize only for chart coordinates.
+  const trendChartPoints = useMemo(() => {
+    if (selectedMetric !== 'volume') return trendPoints;
+    const max = Math.max(...trendPoints, 0);
+    if (max === 0) return trendPoints;
+    return trendPoints.map((count) => Math.round((count / max) * 100));
+  }, [trendPoints, selectedMetric]);
+
   const trendTitle = selectedMetric === 'confidence'
     ? 'Average confidence over time'
     : selectedMetric === 'volume'
@@ -3302,8 +3383,8 @@ function EmotionTrendsTab({ analytics, history }) {
       : 'Concordance score over time';
 
   const trendTargetLine = selectedMetric === 'volume' ? 50 : 40;
-  const xStep = 500 / Math.max(1, trendPoints.length - 1);
-  const pointString = trendPoints
+  const xStep = 500 / Math.max(1, trendChartPoints.length - 1);
+  const pointString = trendChartPoints
     .map((score, i) => {
       const x = i * xStep;
       const y = 100 - score;
@@ -3530,19 +3611,58 @@ function CompareSessionsTab({ analytics, history }) {
       </div>
       <div className="ga-card">
         <div className="ga-section-title">What Changed</div>
-        <div className="ga-bars">
-          <div className="ga-bar-row"><div className="ga-bar-label">Session A confidence</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${confidenceA}%` }} /></div><div className="ga-bar-value">{formatPercent(confidenceA)}</div></div>
-          <div className="ga-bar-row"><div className="ga-bar-label">Session B confidence</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${confidenceB}%` }} /></div><div className="ga-bar-value">{formatPercent(confidenceB)}</div></div>
-          <div className="ga-bar-row"><div className="ga-bar-label">Session A concordance</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${concordanceA}%` }} /></div><div className="ga-bar-value">{formatPercent(concordanceA)}</div></div>
-          <div className="ga-bar-row"><div className="ga-bar-label">Session B concordance</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${concordanceB}%` }} /></div><div className="ga-bar-value">{formatPercent(concordanceB)}</div></div>
-          <div className="ga-bar-row"><div className="ga-bar-label">Concordance delta</div><div className="ga-bar-track"><div className="ga-bar-fill" style={{ width: `${Math.min(100, Math.abs(scoreDiff))}%` }} /></div><div className="ga-bar-value">{scoreDiff >= 0 ? '+' : ''}{scoreDiff}%</div></div>
+        <div className="mt-4 space-y-6">
+          <div className="rounded-2xl border border-cyan-300/10 bg-slate-950/40 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.25em] text-white/50 mb-4">
+              <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-cyan-400" /> Session A</span>
+              <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-blue-400" /> Session B</span>
+              <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-rose-400" /> Delta</span>
+            </div>
+
+            <div className="space-y-5">
+              {[
+                { label: 'Confidence', a: confidenceA, b: confidenceB },
+                { label: 'Concordance', a: concordanceA, b: concordanceB }
+              ].map((metric) => (
+                <div key={metric.label} className="space-y-2">
+                  <div className="flex items-center justify-between text-sm text-white/80">
+                    <span>{metric.label}</span>
+                    <span className="text-white/55">A {metric.a}% · B {metric.b}%</span>
+                  </div>
+                  <div className="grid grid-cols-[72px_1fr_72px_1fr] gap-3 items-center">
+                    <div className="text-xs uppercase tracking-[0.2em] text-white/45 text-right">A</div>
+                    <div className="h-3 rounded-full bg-white/10 overflow-hidden">
+                      <div className="h-full rounded-full bg-cyan-400" style={{ width: `${metric.a}%` }} />
+                    </div>
+                    <div className="text-xs uppercase tracking-[0.2em] text-white/45 text-right">B</div>
+                    <div className="h-3 rounded-full bg-white/10 overflow-hidden">
+                      <div className="h-full rounded-full bg-blue-400" style={{ width: `${metric.b}%` }} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-sm text-white/80">
+                  <span>Concordance delta</span>
+                  <span className={scoreDiff >= 0 ? 'text-cyan-300' : 'text-rose-300'}>{scoreDiff >= 0 ? '+' : ''}{scoreDiff}%</span>
+                </div>
+                <div className="h-4 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${scoreDiff >= 0 ? 'bg-cyan-400' : 'bg-rose-400'}`}
+                    style={{ width: `${Math.max(4, Math.min(100, Math.abs(scoreDiff)))}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function ExportReportTab({ onExportCsv, onExportSummary, analytics }) {
+function ExportReportTab({ onExportSummary, analytics }) {
   const avgConcordanceMetrics = getConcordanceMetrics(analytics.avgConcordance);
   return (
     <div className="ga-design-stack">
@@ -3557,7 +3677,6 @@ function ExportReportTab({ onExportCsv, onExportSummary, analytics }) {
       </div>
       <div className="ga-report-actions">
         <button className="ga-header-btn" onClick={onExportSummary}>Download PDF Report</button>
-        <button className="ga-header-btn" onClick={onExportCsv}>Export CSV</button>
       </div>
     </div>
   );
@@ -3649,6 +3768,7 @@ function DashboardConsole({ authUser, onLogout }) {
   const [clearCombinedSignal, setClearCombinedSignal] = useState(0);
   const [search, setSearch] = useState('');
   const [dateValue, setDateValue] = useState('');
+  const [savedOnly, setSavedOnly] = useState(false);
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [toasts, setToasts] = useState([]);
@@ -3777,6 +3897,7 @@ function DashboardConsole({ authUser, onLogout }) {
 
   const filteredHistory = history
     .filter((row) => (dateValue ? row.createdAt.startsWith(dateValue) : true))
+    .filter((row) => (savedOnly ? Boolean(row.pinned) : true))
     .filter((row) => {
       const q = search.trim().toLowerCase();
       if (!q) return true;
@@ -3800,34 +3921,6 @@ function DashboardConsole({ authUser, onLogout }) {
     if (pieces.length >= 2) return `${pieces[0][0]}${pieces[1][0]}`.toUpperCase();
     return String(base).slice(0, 2).toUpperCase();
   })();
-
-  const exportHistoryCsv = () => {
-    if (!filteredHistory.length) {
-      addToast('No records available to export.', 'info');
-      return;
-    }
-    const header = ['Time', 'Modality', 'Result', 'Confidence', 'Explainability', 'Concordance', 'Note'];
-    const rows = filteredHistory.map((row) => [
-      new Date(row.createdAt).toISOString(),
-      row.modality,
-      row.emotion,
-      `${((row.confidence || 0) * 100).toFixed(2)}%`,
-      row.explainability || 'none',
-      row.concordance ? `${getConcordanceMetrics(row).categoryLabel} · ${formatConcordanceValue(row)}` : '-',
-      (row.note || '').replace(/\n/g, ' ')
-    ]);
-    const csv = [header, ...rows]
-      .map((line) => line.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mmer-history-${dateValue || 'all'}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    addToast('CSV export started.', 'success');
-  };
 
   const ensureLogoDataUrl = async () => {
     if (logoDataUrlRef.current) return logoDataUrlRef.current;
@@ -3991,7 +4084,7 @@ function DashboardConsole({ authUser, onLogout }) {
 
     drawCard(margin, y, 'Total Sessions', totalRecords, 'Records in selected range');
     drawCard(margin + cardW + cardGap, y, 'Avg Confidence', `${avgConfidence}%`, 'Across all sessions');
-    drawCard(margin + ((cardW + cardGap) * 2), y, 'Avg Concordance', `${avgConcordanceMetrics.score.toFixed(1)} / ${avgConcordanceMetrics.percent}%`, 'Match quality score');
+    drawCard(margin + ((cardW + cardGap) * 2), y, 'Avg Concordance', `${avgConcordanceMetrics.percent}%`, 'Match quality percentage');
     drawCard(margin + ((cardW + cardGap) * 3), y, 'Match Rate', `${matchRate}%`, `${matchCount}/${totalRecords} sessions match`);
 
     y += cardH + 16;
@@ -4374,7 +4467,18 @@ function DashboardConsole({ authUser, onLogout }) {
                 onChange={(e) => setSearch(e.target.value)}
               />
               <input type="date" className="ga-date" value={dateValue} onChange={(e) => setDateValue(e.target.value)} />
-              <button className="ga-header-btn" onClick={exportHistoryCsv} disabled={!filteredHistory.length}>Export CSV</button>
+              <button
+                className={`ga-header-btn ${savedOnly ? 'active' : ''}`}
+                onClick={() => setSavedOnly((prev) => !prev)}
+                title="Show only saved sessions"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <svg viewBox="0 0 24 24" className="ga-glyph" aria-hidden="true">
+                    <path d="M7 4h10a1 1 0 011 1v15l-6-3-6 3V5a1 1 0 011-1z" />
+                  </svg>
+                  <span>{savedOnly ? 'All Sessions' : 'Saved'}</span>
+                </span>
+              </button>
               <button className="ga-header-btn" onClick={exportSummaryReport} disabled={!filteredHistory.length}>Export PDF</button>
             </div>
           )}
@@ -4425,7 +4529,7 @@ function DashboardConsole({ authUser, onLogout }) {
           </div>
           {activeTab === 8 && <div className="ga-card ga-tab-shell"><CompareSessionsTab analytics={analytics} history={history} /></div>}
           {activeTab === 4 && <div className="ga-card ga-tab-shell"><ModelInfoTab /></div>}
-          {activeTab === 9 && <div className="ga-card ga-tab-shell"><ExportReportTab onExportCsv={exportHistoryCsv} onExportSummary={exportSummaryReport} analytics={analytics} /></div>}
+          {activeTab === 9 && <div className="ga-card ga-tab-shell"><ExportReportTab onExportSummary={exportSummaryReport} analytics={analytics} /></div>}
           {activeTab === 5 && isLoadingHistory && (
             <div className="ga-card">
               <p className="ga-empty">Loading your history...</p>

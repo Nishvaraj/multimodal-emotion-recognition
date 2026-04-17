@@ -964,7 +964,7 @@ html[data-theme='light'] .ga-brand-logo {
 
 .ga-card,
 .ga-kpi-card {
-  background: var(--card-gradient);
+  background: var(--sb-panel);
   border: 1px solid var(--sb-border);
   border-radius: 16px;
   box-shadow: var(--sb-shadow);
@@ -1178,6 +1178,7 @@ html[data-theme='light'] .ga-brand-logo {
   font-size: 13px;
   color: var(--sb-text);
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .ga-table tbody tr:hover {
@@ -1213,7 +1214,7 @@ html[data-theme='light'] .ga-brand-logo {
 
 .ga-tab-shell {
   padding: 20px;
-  background: linear-gradient(180deg, #131c29 0%, #101824 100%);
+  background: var(--sb-panel);
 }
 
 .ga-tab-shell .grid,
@@ -1275,7 +1276,10 @@ html[data-theme='light'] .ga-brand-logo {
 
 .ga-heatmap-card {
   padding: 10px;
-  max-width: 560px;
+  max-width: none;
+  min-height: 252px;
+  display: flex;
+  flex-direction: column;
 }
 
 .ga-heatmap-title {
@@ -1286,14 +1290,16 @@ html[data-theme='light'] .ga-brand-logo {
 
 .ga-heatmap-grid {
   display: grid;
-  grid-template-columns: repeat(12, 30px);
-  gap: 4px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  flex: 1;
 }
 
 .ga-heat-cell {
   display: block;
-  width: 30px;
-  height: 16px;
+  width: 100%;
+  height: 20px;
   aspect-ratio: auto;
   border-radius: 2px;
   border: 1px solid rgba(29, 78, 216, 0.1);
@@ -1331,21 +1337,74 @@ html[data-theme='light'] .ga-brand-logo {
   justify-content: space-between;
   color: var(--sb-text-soft);
   font-size: 11px;
-  max-width: 404px;
+  width: 100%;
+}
+
+.ga-overview-top-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.ga-overview-top-grid > .ga-card {
+  height: 100%;
+}
+
+.ga-activity-chart-card {
+  justify-content: space-between;
+}
+
+.ga-activity-bars {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 6px;
+  align-items: end;
+  flex: 1;
+}
+
+.ga-activity-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.ga-activity-bar-wrap {
+  width: 100%;
+  height: 148px;
+  border-radius: 6px;
+  border: 1px solid var(--glass-border);
+  background: rgba(29, 78, 216, 0.08);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.ga-activity-bar {
+  width: 100%;
+  background: var(--primary-gradient);
+  transition: height 0.35s ease;
+}
+
+.ga-activity-value {
+  font-size: 11px;
+  color: var(--sb-text-soft);
 }
 
 .ga-insights-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+  margin-top: 16px;
 }
 
 .ga-insight-card {
-  min-height: 168px;
+  min-height: 144px;
   display: grid;
   gap: 10px;
   align-content: start;
-  background: linear-gradient(135deg, rgba(29, 78, 216, 0.08) 0%, rgba(30, 64, 175, 0.08) 100%);
+  background: var(--sb-panel);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
   padding: 16px;
@@ -1367,15 +1426,15 @@ html[data-theme='light'] .ga-brand-logo {
 
 .ga-insight-title {
   margin: 0;
-  font-size: 28px;
+  font-size: 22px;
   line-height: 1.03;
   letter-spacing: -0.01em;
 }
 
 .ga-insight-text {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.4;
+  font-size: 14px;
+  line-height: 1.35;
   color: var(--sb-text-soft);
 }
 
@@ -1560,7 +1619,7 @@ html[data-theme='light'] .ga-brand-logo {
 /* Remap Tailwind utility classes used by analysis tabs */
 .bg-slate-800,
 .bg-slate-900 {
-  background: var(--card-gradient) !important;
+  background: var(--sb-panel) !important;
 }
 
 .bg-slate-700 {
@@ -1640,7 +1699,7 @@ html[data-theme='light'] .ga-card,
 html[data-theme='light'] .ga-kpi-card,
 html[data-theme='light'] .bg-slate-800,
 html[data-theme='light'] .bg-slate-900 {
-  background: var(--card-gradient) !important;
+  background: var(--sb-panel) !important;
 }
 
 html[data-theme='light'] .bg-slate-700 {
@@ -1898,6 +1957,10 @@ select {
   }
 
   .ga-insights-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ga-overview-top-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -2212,7 +2275,7 @@ html:not([data-theme='light']) .ga-layout {
 }
 
 html:not([data-theme='light']) .ga-sidebar {
-  background: linear-gradient(180deg, rgba(8, 20, 34, 0.88) 0%, rgba(4, 13, 24, 0.94) 100%);
+  background: rgba(8, 20, 34, 0.94);
   border-right: 1px solid rgba(103, 232, 249, 0.16);
 }
 
@@ -2243,7 +2306,7 @@ html:not([data-theme='light']) .ga-nav-item {
 
 html:not([data-theme='light']) .ga-nav-item.active {
   border-color: rgba(103, 232, 249, 0.45);
-  background: linear-gradient(90deg, rgba(34, 211, 238, 0.2) 0%, rgba(79, 70, 229, 0.16) 100%);
+  background: rgba(34, 211, 238, 0.16);
 }
 
 html:not([data-theme='light']) .ga-header {
@@ -2299,7 +2362,7 @@ html:not([data-theme='light']) .ga-next-analysis-btn {
 html:not([data-theme='light']) .ga-card,
 html:not([data-theme='light']) .ga-kpi-card {
   border: 1px solid rgba(103, 232, 249, 0.14);
-  background: linear-gradient(180deg, rgba(10, 24, 40, 0.72) 0%, rgba(6, 13, 22, 0.86) 100%);
+  background: rgba(10, 24, 40, 0.84);
 }
 
 html:not([data-theme='light']) .ga-kpi-title {

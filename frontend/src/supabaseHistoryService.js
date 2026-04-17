@@ -10,22 +10,47 @@ export async function saveAnalysisToSupabase(record) {
       return false;
     }
 
-    const { error } = await supabase
+    const scoreFromRecord = Number(record.concordance_score);
+    const hasConcordanceScore = Number.isFinite(scoreFromRecord);
+
+    const probabilitiesPayload = {
+      ...(record.probabilities || {})
+    };
+
+    // Keep a JSON fallback so score survives even if DB schema is older.
+    if (hasConcordanceScore) {
+      probabilitiesPayload.__concordance_score = scoreFromRecord;
+    }
+
+    const insertPayload = {
+      user_id: session.user.id,
+      modality: record.modality,
+      emotion: record.emotion,
+      confidence: record.confidence,
+      probabilities: probabilitiesPayload,
+      explainability: record.explainability,
+      concordance: record.concordance,
+      note: record.note || '',
+      pinned: record.pinned || false,
+      created_at: record.createdAt
+    };
+
+    if (hasConcordanceScore) {
+      insertPayload.concordance_score = scoreFromRecord;
+    }
+
+    let { error } = await supabase
       .from('analysis_history')
-      .insert([
-        {
-          user_id: session.user.id,
-          modality: record.modality,
-          emotion: record.emotion,
-          confidence: record.confidence,
-          probabilities: record.probabilities,
-          explainability: record.explainability,
-          concordance: record.concordance,
-          note: record.note || '',
-          pinned: record.pinned || false,
-          created_at: record.createdAt
-        }
-      ]);
+      .insert([insertPayload]);
+
+    // Backward-compat fallback for databases without concordance_score column.
+    if (error && hasConcordanceScore && String(error.message || '').toLowerCase().includes('concordance_score')) {
+      const fallbackPayload = { ...insertPayload };
+      delete fallbackPayload.concordance_score;
+      ({ error } = await supabase
+        .from('analysis_history')
+        .insert([fallbackPayload]));
+    }
 
     if (error) {
       console.error('Error saving to Supabase:', error);
@@ -78,6 +103,9 @@ export async function loadAnalysisHistoryFromSupabase(dateFilter = null) {
       probabilities: record.probabilities || {},
       explainability: record.explainability,
       concordance: record.concordance,
+      concordance_score: Number.isFinite(Number(record.concordance_score))
+        ? Number(record.concordance_score)
+        : Number(record?.probabilities?.__concordance_score),
       note: record.note || '',
       pinned: record.pinned || false,
       createdAt: record.created_at
