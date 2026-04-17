@@ -1,5 +1,7 @@
 """Explainability utilities for multimodal emotion recognition outputs."""
-
+import os
+os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "0"
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
 import torch
 import torch.nn as nn
 import numpy as np
