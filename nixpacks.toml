@@ -1,12 +1,12 @@
 [phases.setup]
-nixPkgs = ["python310", "ffmpeg"]
+nixPkgs = ["python312", "ffmpeg"]
 
 [phases.install]
 cmds = [
-  "pip install -r requirements.txt",
-  "pip uninstall -y opencv-python || true",
-  "pip install opencv-python-headless"
+  "python -m pip install -r requirements.txt",
+  "python -m pip uninstall -y opencv-python || true",
+  "python -m pip install opencv-python-headless"
 ]
 
 [start]
-cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT"
+cmd = "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
