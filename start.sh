@@ -1,3 +1,2 @@
 #!/bin/bash
-pip uninstall -y opencv-python || true
-uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+exec python -m gunicorn backend.main:app -w 1 -k uvicorn.workers.UvicornWorker --timeout 600 --bind 0.0.0.0:${PORT:-8080}
