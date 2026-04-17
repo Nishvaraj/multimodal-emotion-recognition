@@ -18,6 +18,9 @@ WORKDIR /app
 
 COPY requirements.txt .
 
+# Cache buster
+ARG CACHEBUST=1
+
 RUN pip install --no-cache-dir --timeout=300 --retries=5 -r requirements.txt && \
     pip uninstall -y opencv-python || true && \
     pip install --no-cache-dir --timeout=300 opencv-python-headless>=4.10.0
