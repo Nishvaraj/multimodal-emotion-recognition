@@ -84,6 +84,12 @@ const CONCORDANCE_CATEGORY_THRESHOLD = {
   matchMin: 7.5
 };
 
+// ============== CONCORDANCE + METRIC HELPERS ==============
+function parseRecordTimestamp(row) {
+  const time = new Date(row?.createdAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
 function normalizeConcordancePercent(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
@@ -2747,17 +2753,7 @@ function MarketingPage({ authUser, onLogout }) {
             </>
           )}
           {authUser && (
-            <div className="relative flex items-center gap-2">
-              <button
-                type="button"
-                className="px-3 py-1.5 rounded-full text-sm bg-cyan-400/20 border border-cyan-300/40 hover:bg-cyan-400/30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300"
-                onClick={() => {
-                  setShowUserMenu(false);
-                  navigate('/app/dashboard');
-                }}
-              >
-                Go to Dashboard
-              </button>
+            <div className="relative">
               <button
                 type="button"
                 className="ga-profile"
@@ -2769,7 +2765,7 @@ function MarketingPage({ authUser, onLogout }) {
                 {profileInitials}
               </button>
               {showUserMenu && (
-                <div className="absolute right-0 top-full mt-2 w-44 rounded-xl border border-cyan-300/30 bg-[#081525] shadow-lg p-1 z-[70]">
+                <div className="absolute right-0 mt-2 w-44 rounded-xl border border-cyan-300/30 bg-[#081525] shadow-lg p-1 z-[70]">
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2 text-sm text-cyan-100 hover:bg-cyan-400/15 rounded-lg"
