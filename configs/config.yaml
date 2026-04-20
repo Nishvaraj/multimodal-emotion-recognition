@@ -1,18 +1,20 @@
 # Model architecture settings used by training/experimentation scripts.
 model:
   type: 'fusion'
+  # Audio branch configuration for the fusion model.
   audio_model:
     type: 'CNN'
     parameters:
       num_layers: 3
       dropout_rate: 0.5
+  # Video branch configuration for the fusion model.
   video_model:
     type: 'CNN'
     parameters:
       num_layers: 3
       dropout_rate: 0.5
 
-    # Dataset input/output paths for raw assets and preprocessed artifacts.
+# Dataset input/output paths for raw assets and preprocessed artifacts.
 data:
   paths:
     raw:

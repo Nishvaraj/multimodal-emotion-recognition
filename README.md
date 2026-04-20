@@ -2,6 +2,26 @@
 
 Multimodal emotion analysis app that predicts facial and speech emotions, compares the two modalities, and stores results in Supabase. The current deployment architecture uses a FastAPI backend on Hugging Face Spaces (Docker) and a React frontend on Vercel.
 
+## Documentation And Sustainability
+
+This repository is documented for long-term maintainability using three layers:
+
+- **Project documentation**: this README captures architecture, setup, operations, and contribution guidance.
+- **API documentation**: FastAPI auto-generates OpenAPI docs at runtime (`/docs`, `/redoc`, `/openapi.json`).
+- **Code documentation**: source files include module-level docstrings, section headers, and intent-driven inline comments.
+
+### OpenAPI Documentation
+
+When the backend is running locally, the API docs are available at:
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- OpenAPI JSON: `http://127.0.0.1:8000/openapi.json`
+
+These endpoints are generated from `backend/main.py` route definitions and should be treated as the canonical API contract for frontend/backend integration.
+
+Detailed documentation coverage across files is tracked in `docs/CODE_DOCUMENTATION.md`.
+
 ## What The Project Does
 
 ### Prediction Workflows
@@ -33,6 +53,15 @@ Multimodal emotion analysis app that predicts facial and speech emotions, compar
 - `data/`: dataset notes and storage guidance.
 - `notebooks/`: training notebooks for facial and speech models.
 - `supabase_schema.sql` and `supabase_setup.sql`: database schema and setup scripts.
+
+## File Documentation Policy
+
+To keep the codebase sustainable for academic and production maintenance:
+
+- All editable source files include a file purpose comment or module docstring.
+- Complex logic blocks include concise rationale comments.
+- API handlers include clear summaries and tags in FastAPI decorators.
+- Non-commentable formats (JSON lock/config files, binaries, media assets) are documented here in README and by folder naming conventions.
 
 ## Local Setup
 
@@ -118,3 +147,10 @@ npm start
 - First inference can be slower because facial and speech models are loaded on-demand.
 - Webcam and microphone features require browser permissions.
 - Generated artifacts such as cache folders, build outputs, and local environment files are intentionally excluded from version control.
+
+## Maintenance Checklist
+
+- Keep endpoint summaries/tags updated in `backend/main.py` whenever API routes change.
+- Keep this README aligned with startup commands and deployment defaults.
+- Add comments only where logic is non-obvious; avoid line-by-line noise comments.
+- Run tests/lint checks before deployment to preserve documentation-code consistency.

@@ -1,3 +1,10 @@
+/*
+  Root React application orchestrator.
+
+  This file intentionally keeps the dashboard feature flow in one place so product,
+  UX, and research iteration can happen quickly. Section headers are used throughout
+  to keep long-form component logic readable and maintainable.
+*/
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';

@@ -51,7 +51,38 @@ MAX_FACE_ROTATION_DEGREES = float(os.getenv("MAX_FACE_ROTATION_DEGREES", "8"))
 HAAR_MIN_NEIGHBORS = int(os.getenv("HAAR_MIN_NEIGHBORS", "5"))
 HAAR_MIN_SIZE = int(os.getenv("HAAR_MIN_SIZE", "40"))
 
-app = FastAPI(title="Multi-Modal Emotion Recognition API", version="2.0.0")
+API_TAGS = [
+    {
+        "name": "system",
+        "description": "Service metadata, health checks, and model runtime status.",
+    },
+    {
+        "name": "prediction",
+        "description": "Facial, speech, combined, and video emotion inference endpoints.",
+    },
+    {
+        "name": "reference",
+        "description": "Reference label endpoints consumed by the frontend UI.",
+    },
+]
+
+APP_DESCRIPTION = """
+Production API for multimodal emotion recognition.
+
+- Facial and speech inference using ViT and HuBERT backbones
+- Deterministic concordance scoring for multimodal agreement
+- Optional explainability outputs (Grad-CAM and audio saliency)
+- OpenAPI documentation available at `/docs` and `/redoc`
+"""
+
+app = FastAPI(
+    title="Multi-Modal Emotion Recognition API",
+    version="2.0.0",
+    description=APP_DESCRIPTION,
+    openapi_tags=API_TAGS,
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
 
 # Configure CORS based on environment
 if ENV == "production":
@@ -565,12 +596,12 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
 # ========== API ENDPOINTS ==========
 
 # Root metadata endpoint used by quick uptime checks.
-@app.get("/")
+@app.get("/", tags=["system"], summary="Service Metadata")
 async def root():
     return {"message": "Multi-Modal Emotion Recognition API v2.0", "status": "active"}
 
 # Health endpoint used by hosting platforms and frontend diagnostics.
-@app.get("/health")
+@app.get("/health", tags=["system"], summary="Health Check")
 async def health():
     facial_ready = vit_model is not None and facial_processor is not None
     speech_ready = speech_model is not None and speech_processor is not None
@@ -583,7 +614,7 @@ async def health():
     }
 
 # Facial image inference endpoint.
-@app.post("/api/predict/facial")
+@app.post("/api/predict/facial", tags=["prediction"], summary="Facial Emotion Prediction")
 async def predict_facial(file: UploadFile = File(...), explain: bool = False):
     """Predict emotion from image"""
     try:
@@ -600,7 +631,7 @@ async def predict_facial(file: UploadFile = File(...), explain: bool = False):
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 # Speech/audio inference endpoint.
-@app.post("/api/predict/speech")
+@app.post("/api/predict/speech", tags=["prediction"], summary="Speech Emotion Prediction")
 async def predict_speech(file: UploadFile = File(...), explain: bool = False):
     """Predict emotion from audio"""
     try:
@@ -620,7 +651,7 @@ async def predict_speech(file: UploadFile = File(...), explain: bool = False):
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 # Multimodal endpoint that combines image and audio predictions into a concordance report.
-@app.post("/api/predict/combined")
+@app.post("/api/predict/combined", tags=["prediction"], summary="Combined Multimodal Prediction")
 async def predict_combined(image_file: UploadFile = File(...), audio_file: UploadFile = File(...), explain: bool = False):
     """Predict emotions from both image and audio, then compare results"""
     try:
@@ -741,7 +772,7 @@ async def predict_combined(image_file: UploadFile = File(...), audio_file: Uploa
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 # Video endpoint that samples frames plus audio track from one uploaded media file.
-@app.post("/api/predict/video")
+@app.post("/api/predict/video", tags=["prediction"], summary="Video Emotion Prediction")
 async def predict_video_emotion(file: UploadFile = File(...), explain: bool = False):
     """Predict emotions from video (facial + speech)"""
     try:
@@ -904,17 +935,17 @@ async def predict_video_emotion(file: UploadFile = File(...), explain: bool = Fa
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 # Reference endpoint for frontend label lists.
-@app.get("/api/emotions/facial")
+@app.get("/api/emotions/facial", tags=["reference"], summary="List Facial Emotion Labels")
 async def get_facial_emotions():
     return {"emotions": EMOTIONS_FACIAL}
 
 # Reference endpoint for frontend label lists.
-@app.get("/api/emotions/speech")
+@app.get("/api/emotions/speech", tags=["reference"], summary="List Speech Emotion Labels")
 async def get_speech_emotions():
     return {"emotions": EMOTIONS_SPEECH}
 
 # Runtime status endpoint used by dashboard system cards.
-@app.get("/api/models/status")
+@app.get("/api/models/status", tags=["system"], summary="Model Runtime Status")
 async def get_models_status():
     facial_ready = vit_model is not None and facial_processor is not None
     speech_ready = speech_model is not None and speech_processor is not None
