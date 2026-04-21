@@ -1,0 +1,11 @@
+[run]
+source = backend
+# Exclude the FastAPI entrypoint because it downloads model weights at import time.
+omit =
+    backend/main.py
+    */__init__.py
+
+[report]
+show_missing = True
+skip_covered = False
+precision = 2

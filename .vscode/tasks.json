@@ -53,6 +53,25 @@
       }
     },
     {
+      "label": "Run Backend Coverage",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/pytest",
+      "args": [
+        "tests/",
+        "-v",
+        "--tb=short",
+        "--cov=backend",
+        "--cov-config=.coveragerc",
+        "--cov-report=term-missing",
+        "--cov-report=html",
+        "--cov-report=xml"
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
       "label": "Format Code (Black)",
       "type": "shell",
       "command": "${workspaceFolder}/.venv/bin/black",

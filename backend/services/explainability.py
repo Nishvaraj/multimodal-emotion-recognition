@@ -139,7 +139,7 @@ def generate_audio_saliency(audio, model, processor, emotion_idx, emotions_list,
         if audio is None or len(audio) == 0:
             raise ValueError("Audio input is empty")
 
-        # Sanitize the audio before passing it into the speech backbone.
+        # Sanitize the waveform so NaNs or non-float inputs do not break gradient-based saliency.
         audio = np.asarray(audio, dtype=np.float32)
         audio = np.nan_to_num(audio)
 

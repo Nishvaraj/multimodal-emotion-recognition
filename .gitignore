@@ -55,3 +55,9 @@ logs/
 # Temporary files
 *.tmp
 *.bak
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/

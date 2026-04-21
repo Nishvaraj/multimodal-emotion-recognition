@@ -43,3 +43,8 @@ huggingface_hub>=0.24.0
 # Explainability
 grad-cam
 
+# Testing and Coverage
+pytest>=8.0.0
+pytest-cov>=5.0.0
+coverage>=7.0.0
+
