@@ -371,6 +371,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
   const [gradCam, setGradCam] = useState(null);
   const [annotatedImage, setAnnotatedImage] = useState(null);
   const [faceDetected, setFaceDetected] = useState(false);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
 
   const clearCurrentAnalysis = () => {
     // Reset every piece of facial state so the next analysis starts from a blank slate.
@@ -403,21 +404,46 @@ function FacialTab({ onResult, clearSignal = 0 }) {
     }
   }, [isCameraOn]);
 
+  const processImageFile = (file) => {
+    if (!file) {
+      return;
+    }
+    if (!String(file.type || '').startsWith('image/')) {
+      setError('Please drop an image file');
+      return;
+    }
+    setError(null);
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      setImagePreview(evt.target.result);
+      setEmotion(null);
+      setGradCam(null);
+      setAnnotatedImage(null);
+      setFaceDetected(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleImageSelect = (e) => {
     // Convert the selected file into a previewable data URL while clearing stale results.
-    const file = e.target.files[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        setImagePreview(evt.target.result);
-        setEmotion(null);
-        setGradCam(null);
-        setAnnotatedImage(null);
-        setFaceDetected(false);
-      };
-      reader.readAsDataURL(file);
-    }
+    processImageFile(e.target.files[0]);
+  };
+
+  const handleImageDragOver = (e) => {
+    e.preventDefault();
+    setIsDraggingImage(true);
+  };
+
+  const handleImageDragLeave = (e) => {
+    e.preventDefault();
+    setIsDraggingImage(false);
+  };
+
+  const handleImageDrop = (e) => {
+    e.preventDefault();
+    setIsDraggingImage(false);
+    processImageFile(e.dataTransfer?.files?.[0]);
   };
 
   const startCamera = async () => {
@@ -516,7 +542,12 @@ function FacialTab({ onResult, clearSignal = 0 }) {
           </div>
           <div className="p-4">
             {!isCameraOn && !imagePreview && (
-              <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center">
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDraggingImage ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700'}`}
+                onDragOver={handleImageDragOver}
+                onDragLeave={handleImageDragLeave}
+                onDrop={handleImageDrop}
+              >
                 <p className="text-slate-400 mb-4">Click to Access Webcam</p>
                 <button
                   onClick={startCamera}
@@ -640,7 +671,9 @@ function FacialTab({ onResult, clearSignal = 0 }) {
             <div className="p-4 space-y-3">
               <div className="text-center mb-4">
                 <div className="text-2xl font-bold text-slate-50">{formatEmotionLabel(emotion)}</div>
-                <div className="text-lg text-cyan-300">{(confidence * 100).toFixed(1)}%</div>
+                <div className="text-lg text-cyan-300">
+                  Confidence: {Number.isFinite(Number(confidence)) ? `${(Number(confidence) * 100).toFixed(1)}%` : '--%'}
+                </div>
               </div>
               {EMOTIONS_FACIAL.map((emo) => (
                 <div key={emo} className="space-y-1">
@@ -721,6 +754,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
   const [showSaliency, setShowSaliency] = useState(false);
   const [saliency, setSaliency] = useState(null);
   const [waveform, setWaveform] = useState(null);
+  const [isDraggingAudio, setIsDraggingAudio] = useState(false);
   const recordingStartedAtRef = useRef(null);
   const suppressRecordingOnStopRef = useRef(false);
 
@@ -811,38 +845,61 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
     }
   };
 
-  const handleAudioSelect = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      try {
-        const durationSeconds = await getAudioDurationSeconds(file);
-        if (durationSeconds < MIN_AUDIO_SECONDS) {
-          setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
-          if (audioPreviewUrl) {
-            URL.revokeObjectURL(audioPreviewUrl);
-          }
-          setAudioPreviewUrl(null);
-          setAudioFile(null);
-          setEmotion(null);
-          setSaliency(null);
-          setWaveform(null);
-          e.target.value = '';
-          return;
+  const processAudioFile = async (file) => {
+    if (!file) {
+      return;
+    }
+    if (!String(file.type || '').startsWith('audio/')) {
+      setError('Please drop an audio file');
+      return;
+    }
+    try {
+      const durationSeconds = await getAudioDurationSeconds(file);
+      if (durationSeconds < MIN_AUDIO_SECONDS) {
+        setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
+        if (audioPreviewUrl) {
+          URL.revokeObjectURL(audioPreviewUrl);
         }
-      } catch (durationErr) {
-        setError('Could not read audio duration. Please upload a different file.');
-        e.target.value = '';
+        setAudioPreviewUrl(null);
+        setAudioFile(null);
+        setEmotion(null);
+        setSaliency(null);
+        setWaveform(null);
         return;
       }
-      if (audioPreviewUrl) {
-        URL.revokeObjectURL(audioPreviewUrl);
-      }
-      setAudioPreviewUrl(URL.createObjectURL(file));
-      setAudioFile(file);
-      setEmotion(null);
-      setSaliency(null);
-      setWaveform(null);
+    } catch (durationErr) {
+      setError('Could not read audio duration. Please upload a different file.');
+      return;
     }
+    setError(null);
+    if (audioPreviewUrl) {
+      URL.revokeObjectURL(audioPreviewUrl);
+    }
+    setAudioPreviewUrl(URL.createObjectURL(file));
+    setAudioFile(file);
+    setEmotion(null);
+    setSaliency(null);
+    setWaveform(null);
+  };
+
+  const handleAudioSelect = async (e) => {
+    await processAudioFile(e.target.files[0]);
+  };
+
+  const handleAudioDragOver = (e) => {
+    e.preventDefault();
+    setIsDraggingAudio(true);
+  };
+
+  const handleAudioDragLeave = (e) => {
+    e.preventDefault();
+    setIsDraggingAudio(false);
+  };
+
+  const handleAudioDrop = async (e) => {
+    e.preventDefault();
+    setIsDraggingAudio(false);
+    await processAudioFile(e.dataTransfer?.files?.[0]);
   };
 
   const analyzeSpeech = async () => {
@@ -905,7 +962,12 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
           </div>
           <div className="p-4">
             {!isRecording && !audioFile && (
-              <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center">
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDraggingAudio ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700'}`}
+                onDragOver={handleAudioDragOver}
+                onDragLeave={handleAudioDragLeave}
+                onDrop={handleAudioDrop}
+              >
                 <p className="text-slate-400 mb-4">Click to Record Audio</p>
                 <button
                   onClick={startRecording}
@@ -1050,7 +1112,9 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
             <div className="p-4 space-y-3">
               <div className="text-center mb-4">
                 <div className="text-2xl font-bold text-slate-50">{formatEmotionLabel(emotion)}</div>
-                <div className="text-lg text-cyan-300">{(confidence * 100).toFixed(1)}%</div>
+                <div className="text-lg text-cyan-300">
+                  Confidence: {Number.isFinite(Number(confidence)) ? `${(Number(confidence) * 100).toFixed(1)}%` : '--%'}
+                </div>
               </div>
               {EMOTIONS_SPEECH.map((emo) => (
                 <div key={emo} className="space-y-1">
@@ -1159,6 +1223,9 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
   const [annotatedFace, setAnnotatedFace] = useState(null);
   const [faceDetected, setFaceDetected] = useState(false);
   const [explainabilityStatus, setExplainabilityStatus] = useState(null);
+  const [isDraggingCombinedImage, setIsDraggingCombinedImage] = useState(false);
+  const [isDraggingCombinedAudio, setIsDraggingCombinedAudio] = useState(false);
+  const [isDraggingCombinedVideo, setIsDraggingCombinedVideo] = useState(false);
 
   const concordanceMetrics = getConcordanceMetrics({
     concordance,
@@ -1270,44 +1337,73 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
     }
   }, [clearSignal]);
 
-  const handleImageSelect = (e) => {
+  const processCombinedImageFile = (file) => {
     // Keep image selection simple: load a new preview and clear stale analysis.
-    const file = e.target.files[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        setImagePreview(evt.target.result);
-        resetResults();
-      };
-      reader.readAsDataURL(file);
+    if (!file) {
+      return;
     }
+    if (!String(file.type || '').startsWith('image/')) {
+      setError('Please drop an image file');
+      return;
+    }
+    setError(null);
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      setImagePreview(evt.target.result);
+      resetResults();
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const processCombinedAudioFile = async (file) => {
+    if (!file) {
+      return;
+    }
+    if (!String(file.type || '').startsWith('audio/')) {
+      setError('Please drop an audio file');
+      return;
+    }
+    try {
+      const durationSeconds = await getAudioDurationSeconds(file);
+      if (durationSeconds < MIN_AUDIO_SECONDS) {
+        setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
+        setAudioFile(null);
+        resetResults();
+        return;
+      }
+    } catch (durationErr) {
+      setError('Could not read audio duration. Please upload a different file.');
+      return;
+    }
+    setError(null);
+    if (audioPreviewUrl) {
+      URL.revokeObjectURL(audioPreviewUrl);
+    }
+    setAudioFile(file);
+    setAudioPreviewUrl(URL.createObjectURL(file));
+    resetResults();
+  };
+
+  const processCombinedVideoFile = (file) => {
+    if (!file) return;
+    if (!String(file.type || '').startsWith('video/')) {
+      setError('Please drop a video file');
+      return;
+    }
+    setError(null);
+    if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+    setVideoFile(file);
+    setVideoPreviewUrl(URL.createObjectURL(file));
+    resetResults();
+  };
+
+  const handleImageSelect = (e) => {
+    processCombinedImageFile(e.target.files[0]);
   };
 
   const handleAudioSelect = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      try {
-        const durationSeconds = await getAudioDurationSeconds(file);
-        if (durationSeconds < MIN_AUDIO_SECONDS) {
-          setError(`Audio must be at least ${MIN_AUDIO_SECONDS} seconds. Use 10+ seconds for better feedback.`);
-          setAudioFile(null);
-          resetResults();
-          e.target.value = '';
-          return;
-        }
-      } catch (durationErr) {
-        setError('Could not read audio duration. Please upload a different file.');
-        e.target.value = '';
-        return;
-      }
-      if (audioPreviewUrl) {
-        URL.revokeObjectURL(audioPreviewUrl);
-      }
-      setAudioFile(file);
-      setAudioPreviewUrl(URL.createObjectURL(file));
-      resetResults();
-    }
+    await processCombinedAudioFile(e.target.files[0]);
   };
 
   const startImageCamera = async () => {
@@ -1407,12 +1503,55 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
   };
 
   const handleVideoSelect = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
-    setVideoFile(file);
-    setVideoPreviewUrl(URL.createObjectURL(file));
-    resetResults();
+    processCombinedVideoFile(e.target.files[0]);
+  };
+
+  const handleCombinedImageDragOver = (e) => {
+    e.preventDefault();
+    setIsDraggingCombinedImage(true);
+  };
+
+  const handleCombinedImageDragLeave = (e) => {
+    e.preventDefault();
+    setIsDraggingCombinedImage(false);
+  };
+
+  const handleCombinedImageDrop = (e) => {
+    e.preventDefault();
+    setIsDraggingCombinedImage(false);
+    processCombinedImageFile(e.dataTransfer?.files?.[0]);
+  };
+
+  const handleCombinedAudioDragOver = (e) => {
+    e.preventDefault();
+    setIsDraggingCombinedAudio(true);
+  };
+
+  const handleCombinedAudioDragLeave = (e) => {
+    e.preventDefault();
+    setIsDraggingCombinedAudio(false);
+  };
+
+  const handleCombinedAudioDrop = async (e) => {
+    e.preventDefault();
+    setIsDraggingCombinedAudio(false);
+    await processCombinedAudioFile(e.dataTransfer?.files?.[0]);
+  };
+
+  const handleCombinedVideoDragOver = (e) => {
+    e.preventDefault();
+    setIsDraggingCombinedVideo(true);
+  };
+
+  const handleCombinedVideoDragLeave = (e) => {
+    e.preventDefault();
+    setIsDraggingCombinedVideo(false);
+  };
+
+  const handleCombinedVideoDrop = (e) => {
+    e.preventDefault();
+    setIsDraggingCombinedVideo(false);
+    processCombinedVideoFile(e.dataTransfer?.files?.[0]);
   };
 
   const startVideoCamera = async () => {
@@ -1707,7 +1846,12 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
             {!imagePreview && !isCameraOn && (
               <div className="space-y-3">
                 <label className="cursor-pointer block">
-                  <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
+                  <div
+                    className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDraggingCombinedImage ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700 hover:border-slate-600'}`}
+                    onDragOver={handleCombinedImageDragOver}
+                    onDragLeave={handleCombinedImageDragLeave}
+                    onDrop={handleCombinedImageDrop}
+                  >
                     <p className="text-slate-400 mb-2">Upload Image</p>
                     <p className="text-slate-500 text-sm">Drop Image Here or Click to Upload</p>
                   </div>
@@ -1774,7 +1918,12 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
             {!audioFile && !isAudioRecording && (
               <div className="space-y-3">
                 <label className="cursor-pointer block">
-                  <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
+                  <div
+                    className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDraggingCombinedAudio ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700 hover:border-slate-600'}`}
+                    onDragOver={handleCombinedAudioDragOver}
+                    onDragLeave={handleCombinedAudioDragLeave}
+                    onDrop={handleCombinedAudioDrop}
+                  >
                     <p className="text-slate-400 mb-2">Upload Audio</p>
                     <p className="text-slate-500 text-sm">Drop Audio Here or Click to Upload</p>
                   </div>
@@ -1851,7 +2000,12 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
               <>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3" style={{ display: isVideoCameraOn ? 'none' : 'grid' }}>
                   <label className="cursor-pointer block">
-                    <div className="border-2 border-dashed border-slate-700 rounded-lg p-8 text-center hover:border-slate-600 transition-colors">
+                    <div
+                      className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDraggingCombinedVideo ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700 hover:border-slate-600'}`}
+                      onDragOver={handleCombinedVideoDragOver}
+                      onDragLeave={handleCombinedVideoDragLeave}
+                      onDrop={handleCombinedVideoDrop}
+                    >
                       <p className="text-slate-400 mb-2">Upload Video</p>
                       <p className="text-slate-500 text-sm">Drop Video Here or Click to Upload</p>
                     </div>
@@ -2031,6 +2185,11 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
               <div className="p-4">
                 <div className="text-center mb-4">
                   <div className="text-xl font-bold text-slate-50">{formatEmotionLabel(facialEmotion)}</div>
+                  {facialProbs && facialEmotion && Object.prototype.hasOwnProperty.call(facialProbs, facialEmotion) && (
+                    <div className="text-sm text-cyan-300 mt-1">
+                      Confidence: {(Number(facialProbs[facialEmotion]) * 100).toFixed(0)}%
+                    </div>
+                  )}
                 </div>
                 {facialProbs && (
                   <div className="space-y-2">
@@ -2061,6 +2220,11 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
               <div className="p-4">
                 <div className="text-center mb-4">
                   <div className="text-xl font-bold text-slate-50">{formatEmotionLabel(speechEmotion)}</div>
+                  {speechProbs && speechEmotion && Object.prototype.hasOwnProperty.call(speechProbs, speechEmotion) && (
+                    <div className="text-sm text-cyan-300 mt-1">
+                      Confidence: {(Number(speechProbs[speechEmotion]) * 100).toFixed(0)}%
+                    </div>
+                  )}
                 </div>
                 {speechProbs && (
                   <div className="space-y-2">
