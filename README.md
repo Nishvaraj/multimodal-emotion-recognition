@@ -144,7 +144,7 @@ npm start
 
 ### Hugging Face Spaces Backend (Docker)
 1. Use a Docker Space and include `Dockerfile`, `requirements.txt`, and backend source files.
-2. Keep the runtime command bound to the Space port (`7860`) in Docker runtime or startup script.
+2. Keep the runtime command bound to the platform-provided `PORT` in Docker runtime or startup script.
 3. You can use `start.sh` for production-style startup (Gunicorn + Uvicorn worker).
 4. Set `ENV=production`.
 5. Set `USE_GPU=false` unless the Space hardware includes GPU support.

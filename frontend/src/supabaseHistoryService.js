@@ -1,6 +1,14 @@
+/*
+  Supabase persistence service for analysis history records.
+
+  The service normalizes payloads between evolving database schemas and frontend
+  state shape, preserving backwards compatibility for concordance metadata.
+*/
+
+// --- Imports ---
 import { supabase } from './supabaseClient';
 
-// ========== SUPABASE HISTORY OPERATIONS ==========
+// --- History Operations ---
 
 // Save one analysis row while staying compatible with older table schemas.
 export async function saveAnalysisToSupabase(record) {
@@ -175,7 +183,7 @@ export async function deleteAnalysisRecord(recordId) {
   }
 }
 
-// ========== REAL-TIME SUBSCRIPTION ==========
+// --- Real-Time Subscription ---
 
 // Listen for history updates so the UI can refresh live.
 export function subscribeToAnalysisHistory(callback) {

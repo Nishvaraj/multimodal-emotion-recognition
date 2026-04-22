@@ -1,5 +1,9 @@
 """Explainability utilities for multimodal emotion recognition outputs."""
+
+# --- Imports ---
 import os
+
+# --- Runtime Safeguards ---
 # Disable OpenEXR and GUI requirements so OpenCV/Matplotlib work in headless containers.
 os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "0"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -22,7 +26,7 @@ from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from pytorch_grad_cam.utils.reshape_transforms import vit_reshape_transform
 
 
-# ==================== MODEL WRAPPER ====================
+# --- Model Wrapper ---
 class ViTLogitsWrapper(nn.Module):
     def __init__(self, model):
         super().__init__()
@@ -33,7 +37,7 @@ class ViTLogitsWrapper(nn.Module):
         return self.model(pixel_values=x).logits
 
 
-# ==================== FACIAL EXPLAINABILITY ====================
+# --- Facial Explainability ---
 def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, device):
     try:
         img_rgb = np.array(image.convert('RGB'))
@@ -46,7 +50,7 @@ def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, devic
         wrapped_model = ViTLogitsWrapper(model)
         wrapped_model.eval()
 
-        # Try multiple layers because the last block can become too saturated for a usable heatmap.
+        # Try multiple layers because ViT final-block gradients can saturate; stepping earlier often yields cleaner Grad-CAM.
         layers_to_try = [
             model.vit.encoder.layer[-1].layernorm_after,
             model.vit.encoder.layer[-2].layernorm_after,
@@ -133,7 +137,7 @@ def generate_grad_cam(image, model, processor, emotion_idx, emotions_list, devic
         return None, None
 
 
-# ==================== AUDIO EXPLAINABILITY ====================
+# --- Audio Explainability ---
 def generate_audio_saliency(audio, model, processor, emotion_idx, emotions_list, device, sr=16000):
     try:
         if audio is None or len(audio) == 0:
@@ -226,7 +230,7 @@ def generate_audio_saliency(audio, model, processor, emotion_idx, emotions_list,
         return None, None
 
 
-# ==================== COMBINED VISUALIZATION ====================
+# --- Combined Visualization ---
 def create_combined_visualization(grad_cam_base64, saliency_base64, facial_emotion, speech_emotion, concordance):
     try:
         # Use a soft status tint so the combined report communicates agreement at a glance.

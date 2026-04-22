@@ -1,5 +1,6 @@
 """FastAPI backend for multimodal (facial + speech) emotion inference."""
 
+# --- Imports ---
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -19,11 +20,13 @@ import logging
 from threading import Lock
 from dotenv import load_dotenv
 
+# --- Optional Dependencies ---
 try:
     from facenet_pytorch import MTCNN  # type: ignore[import-not-found]
 except Exception:
     MTCNN = None
 
+# --- Environment And Logging Setup ---
 # Load environment variables
 load_dotenv()
 
@@ -37,6 +40,7 @@ logger = logging.getLogger(__name__)
 # Explainability helpers
 from backend.services.explainability import generate_grad_cam, generate_audio_saliency
 
+# --- Runtime Environment Configuration ---
 ENV = os.getenv("ENV", "development")
 # Keep backward compatibility with older env naming used during previous Vercel integration.
 FRONTEND_URL = os.getenv(
@@ -51,6 +55,7 @@ MAX_FACE_ROTATION_DEGREES = float(os.getenv("MAX_FACE_ROTATION_DEGREES", "8"))
 HAAR_MIN_NEIGHBORS = int(os.getenv("HAAR_MIN_NEIGHBORS", "5"))
 HAAR_MIN_SIZE = int(os.getenv("HAAR_MIN_SIZE", "40"))
 
+# --- API Metadata ---
 API_TAGS = [
     {
         "name": "system",
@@ -110,7 +115,7 @@ logger.info(
     HAAR_MIN_SIZE,
 )
 
-# Runtime configuration
+# --- Model And Inference Constants ---
 EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
 EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised']
 DEVICE = torch.device('cuda' if (torch.cuda.is_available() and USE_GPU) else 'cpu')
@@ -123,7 +128,7 @@ CONCORDANCE_SCORE_MAP = {
     'UNKNOWN': 0,
 }
 
-# In-memory model state
+# --- In-Memory Model State ---
 vit_model = None
 facial_processor = None
 speech_model = None
@@ -148,6 +153,7 @@ logger.info(f"Facial model path: {FACIAL_MODEL_PATH}")
 logger.info(f"Speech model path: {SPEECH_MODEL_PATH}")
 
 
+# --- Helper Functions ---
 def _upload_suffix(filename: str, default_suffix: str) -> str:
     # Preserve the original extension when the browser provides one, otherwise fall back to a safe default.
     suffix = Path(filename or '').suffix.lower()
@@ -157,7 +163,8 @@ def _upload_suffix(filename: str, default_suffix: str) -> str:
 def _calculate_concordance(facial_emotion, speech_emotion, facial_confidence, speech_confidence):
     # Match/partial/mismatch is derived from whether both models agree and how confident they are.
     if facial_emotion == speech_emotion:
-        # When the modalities agree, the average confidence controls the concordance band.
+        # When modalities agree, we use the mean confidence and apply the paper's deterministic 0.70 threshold.
+        # The strict >0.70 cut keeps MATCH reserved for high-certainty agreement across both modalities.
         score = (facial_confidence + speech_confidence) / 2
         if score > 0.7:
             concordance = "MATCH"
@@ -273,6 +280,7 @@ def _shrink_box(face_box, shrink_ratio: float = 0.12):
 
 def _trim_audio_window(audio: np.ndarray, sr: int, max_seconds: int) -> np.ndarray:
     # Long recordings are centered and clipped so inference stays fast and consistent.
+    # The default 15-second inference window captures enough prosodic context while bounding latency and memory.
     if audio is None or sr <= 0:
         return audio
     max_len = int(sr * max_seconds)
@@ -286,7 +294,7 @@ def _trim_audio_window(audio: np.ndarray, sr: int, max_seconds: int) -> np.ndarr
 logger.info(f"Device: {DEVICE}")
 logger.info(f"Environment: {ENV}")
 
-# ========== MODEL LOADING ==========
+# --- Model Loading ---
 
 def load_facial_model():
     """Load ViT model for facial emotion"""
@@ -390,7 +398,7 @@ if PRELOAD_MODELS:
     facial_loaded = load_facial_model()
     speech_loaded = load_speech_model()
 
-# ========== VIDEO PROCESSOR ==========
+# --- Video Processing ---
 
 class VideoProcessor:
     @staticmethod
@@ -427,7 +435,7 @@ class VideoProcessor:
         
         return frames, audio, sr, fps
 
-# ========== PREDICTION FUNCTIONS ==========
+# --- Prediction Functions ---
 
 def predict_facial_emotion(image: Image.Image, generate_explainability: bool = False):
     """Predict emotion from image"""
@@ -544,6 +552,7 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
         # Keep inference fast and stable for long recordings.
         audio_for_infer = _trim_audio_window(audio, 16000, MAX_SPEECH_INFER_SECONDS)
         
+        # HuBERT expects normalized waveform features at 16 kHz; the feature extractor handles padding/shape harmonization.
         inputs = speech_processor(audio_for_infer, sampling_rate=16000, return_tensors="pt", padding=True)
         with torch.no_grad():
             outputs = speech_model(inputs['input_values'].to(DEVICE))
@@ -593,7 +602,7 @@ def predict_speech_emotion(audio: np.ndarray, sr: int = 16000, generate_explaina
         logger.error(f"Error predicting speech emotion: {e}")
         return None
 
-# ========== API ENDPOINTS ==========
+# --- API Endpoints ---
 
 # Root metadata endpoint used by quick uptime checks.
 @app.get("/", tags=["system"], summary="Service Metadata")

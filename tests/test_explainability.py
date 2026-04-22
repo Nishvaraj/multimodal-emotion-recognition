@@ -1,3 +1,16 @@
+"""
+Unit tests for facial/audio explainability utilities in the multimodal inference stack.
+
+Given lightweight fake tensors, processors, and model wrappers,
+when Grad-CAM/audio saliency helpers execute under success and failure paths,
+then outputs remain deterministic and local-test safe without remote dependencies.
+
+Mocking strategy note:
+- Hugging Face-scale model objects are replaced with minimal fake classes and monkeypatches.
+- Supabase is not used in explainability generation and is intentionally out of scope here.
+"""
+
+# --- Imports ---
 from types import SimpleNamespace
 
 import numpy as np
@@ -7,6 +20,7 @@ from PIL import Image
 from backend.services import explainability
 
 
+# --- Test Doubles ---
 class _FakeBatch(dict):
     def to(self, device):
         return self
@@ -32,7 +46,7 @@ class _AudioModel:
         return SimpleNamespace(logits=logits)
 
 
-    # ViT wrapper and Grad-CAM generation paths.
+# --- Given-When-Then: Grad-CAM Paths ---
 def test_vit_logits_wrapper_forward_returns_logits():
     wrapped = explainability.ViTLogitsWrapper(_FakeModel())
     out = wrapped(torch.zeros((1, 3, 32, 32), dtype=torch.float32))
@@ -143,7 +157,7 @@ def test_generate_grad_cam_returns_none_on_total_failure(monkeypatch):
     assert blend_b64 is None
 
 
-# Audio saliency success and failure paths.
+# --- Given-When-Then: Audio Saliency Paths ---
 def test_generate_audio_saliency_success(monkeypatch):
     audio = np.random.rand(1600).astype(np.float32)
     processor = lambda audio, sampling_rate, return_tensors, padding: {
@@ -198,7 +212,7 @@ def test_generate_audio_saliency_returns_none_for_empty_audio():
     assert sal_b64 is None
 
 
-# Combined visualization rendering and failure handling.
+# --- Given-When-Then: Combined Visualization Paths ---
 def test_create_combined_visualization_success():
     combined = explainability.create_combined_visualization(
         grad_cam_base64="AAA",

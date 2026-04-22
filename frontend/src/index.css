@@ -1,10 +1,19 @@
-/* Global styling for the React application shell and shared UI tokens. */
+/*
+  Global stylesheet for the Multi-Modal Emotion Recognition web client.
+
+  Defines cross-route design tokens, theme variables, and shared primitives so
+  analytics, explainability, and history views render with consistent semantics.
+*/
+
+/* --- Module: FONT IMPORTS --- */
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap');
 
+/* --- Module: TAILWIND LAYERS --- */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* --- Module: DARK THEME DESIGN TOKENS --- */
 :root {
   --sb-bg: #0a0e1a;
   --sb-bg-elevated: #0f1422;
@@ -29,6 +38,7 @@
   --sb-shadow-lg: 0 40px 80px rgba(0, 0, 0, 0.4);
 }
 
+/* --- Module: LIGHT THEME DESIGN TOKENS --- */
 html[data-theme='light'] {
   --sb-bg: #f8f9ff;
   --sb-bg-elevated: #ffffff;
@@ -53,6 +63,7 @@ html[data-theme='light'] {
   --sb-shadow-lg: 0 20px 60px rgba(15, 23, 40, 0.15);
 }
 
+/* --- Module: BASE ELEMENT NORMALIZATION --- */
 * {
   box-sizing: border-box;
 }
@@ -76,6 +87,7 @@ code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 }
 
+/* --- Module: AUTHENTICATION SURFACES --- */
 /* Login */
 .ga-login {
   min-height: 100vh;

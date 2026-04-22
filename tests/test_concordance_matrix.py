@@ -1,7 +1,22 @@
+"""
+Deterministic concordance policy tests for multimodal emotion agreement.
+
+Given fixed FER2013 and RAVDESS label/confidence fixtures,
+when the backend concordance policy is evaluated for every label pairing,
+then the implementation must match an independent oracle across all 56 combinations.
+
+Mocking strategy note:
+- This file bypasses heavy runtime imports (including Hugging Face model loading)
+    by extracting only `_calculate_concordance` from backend source via AST.
+- Supabase is not part of concordance policy evaluation and is intentionally excluded.
+"""
+
+# --- Imports ---
 import ast
 from pathlib import Path
 
 
+# --- Deterministic Test Fixtures ---
 FER2013_LABELS = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
 RAVDESS_LABELS = ["angry", "calm", "disgust", "fearful", "happy", "neutral", "sad", "surprised"]
 
@@ -28,6 +43,7 @@ RAVDESS_CONFIDENCE = {
 }
 
 
+# --- Helper Functions ---
 def _load_calculate_concordance():
     """Load _calculate_concordance from backend/main.py without importing heavy runtime dependencies."""
     backend_main = Path(__file__).resolve().parents[1] / "backend" / "main.py"
@@ -70,6 +86,7 @@ def _oracle_concordance(facial_emotion, speech_emotion, facial_confidence, speec
     return concordance, round(score * 100)
 
 
+# --- Given-When-Then Validation ---
 def test_calculate_concordance_all_56_label_combinations():
     calculate_concordance = _load_calculate_concordance()
 

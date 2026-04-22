@@ -1,5 +1,6 @@
 """Dataset loaders used by the training and experimentation workflows."""
 
+# --- Imports ---
 import os
 import numpy as np
 import cv2
@@ -9,7 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 
-# ==================== FACIAL DATASET ====================
+# --- Facial Dataset ---
 class FER2013Dataset(Dataset):
     """FER2013 facial emotion dataset loader."""
 
@@ -71,7 +72,7 @@ class FER2013Dataset(Dataset):
         return image, torch.tensor(label, dtype=torch.long)
 
 
-    # ==================== AUDIO DATASET ====================
+# --- Audio Dataset ---
 class RAVDESSDataset(Dataset):
     """RAVDESS audio emotion dataset loader."""
 
@@ -137,7 +138,7 @@ class RAVDESSDataset(Dataset):
             return torch.zeros(self.n_mfcc, 100), torch.tensor(label, dtype=torch.long)
 
 
-# ==================== DATALOADER FACTORY ====================
+# --- Dataloader Factory ---
 def create_dataloaders(
     fer2013_dir: str = None,
     ravdess_dir: str = None,

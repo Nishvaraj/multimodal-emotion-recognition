@@ -1,3 +1,16 @@
+"""
+Dataset loader tests for FER2013 and RAVDESS preprocessing behavior.
+
+Given synthetic files and monkeypatched librosa calls,
+when dataset classes and dataloader factories are exercised,
+then padding, truncation, fallback tensors, and split construction remain deterministic.
+
+Mocking strategy note:
+- External model hubs (for example Hugging Face checkpoints) are not touched in this suite.
+- Supabase is not used by dataset loaders and is therefore intentionally excluded.
+"""
+
+# --- Imports ---
 import cv2
 import numpy as np
 import torch
@@ -6,12 +19,13 @@ from backend.services import data_loader
 from backend.services.data_loader import FER2013Dataset, create_dataloaders
 
 
+# --- Test Helpers ---
 def _write_gray_image(path, value=128):
     image = np.full((48, 48), value, dtype=np.uint8)
     assert cv2.imwrite(str(path), image)
 
 
-# FER2013 dataset loading and fallback behavior.
+# --- Given-When-Then: FER2013 Loading Paths ---
 def test_fer2013_dataset_loads_images_and_returns_tensors(tmp_path):
     train_happy = tmp_path / "train" / "happy"
     train_angry = tmp_path / "train" / "angry"
@@ -72,7 +86,7 @@ def test_create_dataloaders_builds_fer2013_train_and_test(tmp_path):
     assert labels.dtype == torch.long
 
 
-# RAVDESS dataset filtering, padding, truncation, and exception handling.
+# --- Given-When-Then: RAVDESS Loading Paths ---
 def test_ravdess_dataset_loads_supported_files_only(tmp_path):
     # File naming matches the RAVDESS pattern where the third token is emotion code.
     valid_1 = tmp_path / "03-01-05-01-01-01-01.wav"
@@ -151,7 +165,7 @@ def test_ravdess_getitem_handles_exceptions(monkeypatch, tmp_path):
     assert label.dtype == torch.long
 
 
-# Factory behavior when dataset folders are present or missing.
+# --- Given-When-Then: Dataloader Factory Paths ---
 def test_create_dataloaders_returns_empty_when_paths_missing(tmp_path):
     dataloaders = create_dataloaders(
         fer2013_dir=str(tmp_path / "missing-fer"),

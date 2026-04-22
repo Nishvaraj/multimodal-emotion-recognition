@@ -1,5 +1,12 @@
-/* Legacy layout styles used by the Gradio-style demo UI. */
-/* ===== RESET & BASE STYLES ===== */
+/*
+  Legacy component stylesheet for the Multi-Modal Emotion Recognition frontend.
+
+  This file preserves the original Gradio-inspired layout primitives that are still
+  referenced by selected routes and fallback views.
+*/
+
+/* --- Module: BASE RESET + TYPOGRAPHY --- */
+/* --- RESET & BASE STYLES --- */
 * {
   margin: 0;
   padding: 0;
@@ -22,7 +29,8 @@ body {
   line-height: 1.6;
 }
 
-/* ===== APP CONTAINER ===== */
+/* --- Module: APPLICATION SHELL --- */
+/* --- APP CONTAINER --- */
 .app-container {
   max-width: 1200px;
   margin: 20px auto;
@@ -44,7 +52,8 @@ body {
   }
 }
 
-/* ===== HEADER SECTION ===== */
+/* --- Module: HEADER + INTRO CONTENT --- */
+/* --- HEADER SECTION --- */
 .gradio-header {
   background: linear-gradient(135deg, #1a3a6e 0%, #2452a8 100%);
   color: white;
@@ -104,7 +113,8 @@ body {
   z-index: 1;
 }
 
-/* ===== TAB NAVIGATION ===== */
+/* --- Module: NAVIGATION + CONTENT LAYOUT --- */
+/* --- TAB NAVIGATION --- */
 .tabs {
   display: flex;
   border-bottom: 2px solid rgba(255, 255, 255, 0.08);
@@ -141,7 +151,7 @@ body {
   font-weight: 800;
 }
 
-/* ===== TAB CONTENT ===== */
+/* --- TAB CONTENT --- */
 .tab-content {
   padding: 45px 40px;
   animation: fadeInUp 0.4s ease-out;
@@ -203,7 +213,7 @@ body {
   color: #6b7a8d;
 }
 
-/* ===== TWO COLUMN LAYOUT ===== */
+/* --- TWO COLUMN LAYOUT --- */
 .two-column {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -223,7 +233,7 @@ body {
   font-weight: 700;
 }
 
-/* ===== INPUT ELEMENTS ===== */
+/* --- INPUT ELEMENTS --- */
 .input-label {
   display: block;
   font-weight: 700;
@@ -263,7 +273,7 @@ body {
   background: #0f1420;
 }
 
-/* ===== BUTTON STYLES ===== */
+/* --- BUTTON STYLES --- */
 .button-group {
   display: flex;
   gap: 12px;
@@ -357,7 +367,7 @@ body {
   transform: none !important;
 }
 
-/* ===== RESULT BOX STYLES ===== */
+/* --- RESULT BOX STYLES --- */
 .result-box {
   background: linear-gradient(135deg, #0f1420 0%, #141b2d 100%);
   padding: 25px;
@@ -390,7 +400,7 @@ body {
   color: #6b7a8d;
 }
 
-/* ===== COMBINED RESULTS ===== */
+/* --- COMBINED RESULTS --- */
 .combined-results {
   background: linear-gradient(135deg, #0f1420 0%, #141b2d 100%);
   padding: 40px;
@@ -455,7 +465,7 @@ body {
   letter-spacing: -1px;
 }
 
-/* ===== VIDEO/AUDIO ELEMENTS ===== */
+/* --- VIDEO/AUDIO ELEMENTS --- */
 video,
 audio {
   width: 100%;
@@ -479,7 +489,7 @@ img {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
-/* ===== EMOTION SCORES ===== */
+/* --- EMOTION SCORES --- */
 .emotion-scores {
   display: flex;
   flex-direction: column;
@@ -546,7 +556,7 @@ img {
   font-size: 1em;
 }
 
-/* ===== FOOTER ===== */
+/* --- FOOTER --- */
 .footer {
   background: linear-gradient(to right, #0f1420, #141b2d);
   padding: 25px;
@@ -556,7 +566,7 @@ img {
   font-weight: 500;
 }
 
-/* ===== STATUS INDICATORS ===== */
+/* --- STATUS INDICATORS --- */
 .status-indicator {
   display: inline-flex;
   align-items: center;
@@ -601,7 +611,7 @@ img {
   }
 }
 
-/* ===== RESPONSIVE DESIGN ===== */
+/* --- RESPONSIVE DESIGN --- */
 @media (max-width: 1024px) {
   .app-container {
     margin: 10px;
@@ -753,7 +763,7 @@ img {
   }
 }
 
-/* ===== ACCESSIBILITY ===== */
+/* --- ACCESSIBILITY --- */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -787,7 +797,7 @@ img {
   outline-offset: 2px;
 }
 
-/* ===== LANDSCAPE MODE RESPONSIVENESS ===== */
+/* --- LANDSCAPE MODE RESPONSIVENESS --- */
 @media (max-height: 600px) and (orientation: landscape) {
   /* Reduce vertical spacing in landscape */
   .app-container {
@@ -1027,7 +1037,7 @@ img {
   }
 }
 
-/* ===== LANDSCAPE OPTIMIZATIONS FOR DASHBOARD ===== */
+/* --- LANDSCAPE OPTIMIZATIONS FOR DASHBOARD --- */
 @media (orientation: landscape) {
   /* Optimize main app container for landscape */
   .ga-main-container {
@@ -1126,7 +1136,7 @@ img {
   }
 }
 
-/* ===== MOBILE LANDSCAPE NAVIGATION FIXES ===== */
+/* --- MOBILE LANDSCAPE NAVIGATION FIXES --- */
 @media (max-height: 600px) and (orientation: landscape) and (max-width: 1024px) {
   /* Compact header for landscape */
   nav {
@@ -1141,12 +1151,12 @@ img {
   }
 
   /* Hide desktop navigation menu items in landscape on small screens */
-  .hidden.md\\:flex {
+  .hidden.md\:flex {
     display: none !important;
   }
 
   /* Optimize button text */
-  .px-3.py-1\\.5 {
+  .px-3.py-1\.5 {
     padding: 6px 10px;
     font-size: 0.75rem;
   }
@@ -1172,11 +1182,11 @@ img {
     gap: 4px;
   }
 
-  .h-2\\.5.rounded-full {
+  .h-2\.5.rounded-full {
     height: 2px;
   }
 
-  .w-7, .w-2\\.5 {
+  .w-7, .w-2\.5 {
     width: 3px;
   }
 
@@ -1192,7 +1202,7 @@ img {
   }
 }
 
-/* ===== PREVENT HORIZONTAL SCROLLING IN LANDSCAPE ===== */
+/* --- PREVENT HORIZONTAL SCROLLING IN LANDSCAPE --- */
 @media (orientation: landscape) {
   * {
     max-width: 100%;

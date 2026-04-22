@@ -1,10 +1,13 @@
 /*
-  Root React application orchestrator.
+  Root React application orchestrator for the Multi-Modal Emotion Recognition system.
 
   This file intentionally keeps the dashboard feature flow in one place so product,
-  UX, and research iteration can happen quickly. Section headers are used throughout
-  to keep long-form component logic readable and maintainable.
+  UX, and research iteration can happen quickly. It coordinates multimodal inference
+  requests, concordance interpretation, explainability rendering, and Supabase-backed
+  history workflows for reproducible analysis sessions.
 */
+
+// --- IMPORTS ---
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -13,14 +16,14 @@ import { supabase } from './supabaseClient';
 import { saveAnalysisToSupabase, loadAnalysisHistoryFromSupabase, updateAnalysisNote, toggleAnalysisPin, deleteAnalysisRecord } from './supabaseHistoryService';
 import logoImage from './assets/logo.png';
 
-// ============== MODEL + API CONSTANTS ==============
+// --- MODEL + API CONSTANTS ---
 const EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
 const EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised'];
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000';
 const MIN_AUDIO_SECONDS = 5;
 const RECOMMENDED_AUDIO_SECONDS = 10;
 
-// ============== MEDIA + UI CONSTANTS ==============
+// --- MEDIA + UI CONSTANTS ---
 const AUDIO_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
 const VIDEO_MIME_CANDIDATES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
 const BTN_PRIMARY = 'bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg';
@@ -28,7 +31,7 @@ const BTN_SUCCESS = 'bg-gradient-to-br from-cyan-600 to-blue-700 hover:from-cyan
 const BTN_DANGER = 'bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-medium transition-colors';
 const BTN_NEUTRAL = 'bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg font-medium transition-colors';
 
-// ============== GENERIC HELPERS ==============
+// --- GENERIC HELPERS ---
 function pickSupportedMimeType(candidates) {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
     return '';
@@ -84,6 +87,7 @@ const CONCORDANCE_PERCENT_MAP = {
   MISMATCH: 28
 };
 
+// These UI bands map raw concordance into human-readable categories for dashboards and reports.
 const CONCORDANCE_CATEGORY_THRESHOLD = {
   mismatchMax: 3.9,
   partialMin: 4.0,
@@ -91,7 +95,7 @@ const CONCORDANCE_CATEGORY_THRESHOLD = {
   matchMin: 7.5
 };
 
-// ============== CONCORDANCE + METRIC HELPERS ==============
+// --- CONCORDANCE + METRIC HELPERS ---
 function parseRecordTimestamp(row) {
   const time = new Date(row?.createdAt || 0).getTime();
   return Number.isFinite(time) ? time : 0;
@@ -354,7 +358,7 @@ function buildWeeklySeries(history, { metric = 'concordance', modality = 'all' }
   return points;
 }
 
-// ============== FACIAL EMOTION TAB ==============
+// --- FACIAL EMOTION TAB ---
 function FacialTab({ onResult, clearSignal = 0 }) {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -738,7 +742,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
   );
 }
 
-// ============== SPEECH EMOTION TAB ==============
+// --- SPEECH EMOTION TAB ---
 function SpeechTab({ onResult, clearSignal = 0 }) {
   const [audioFile, setAudioFile] = useState(null);
   const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
@@ -1178,7 +1182,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
   );
 }
 
-// ============== COMBINED ANALYSIS TAB ==============
+// --- COMBINED ANALYSIS TAB ---
 function CombinedTab({ onResult, clearSignal = 0 }) {
   const [inputMode, setInputMode] = useState('separate');
   const [imageFile, setImageFile] = useState(null);
@@ -2340,7 +2344,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
   );
 }
 
-// ============== MODEL INFORMATION TAB ==============
+// --- MODEL INFORMATION TAB ---
 function ModelInfoTab() {
   const [modelStatus, setModelStatus] = useState(null);
   const [statusError, setStatusError] = useState('');
@@ -2514,7 +2518,7 @@ function ModelInfoTab() {
   );
 }
 
-// ============== MAIN APP COMPONENT ==============
+// --- MAIN APP COMPONENT ---
 const AUTH_STORAGE_KEY = 'mmer_auth_user';
 
 function AuthPage({ mode = 'login', onAuthSuccess }) {

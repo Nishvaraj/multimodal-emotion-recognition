@@ -1,3 +1,11 @@
+/*
+  Tailwind theme and content configuration for the Multi-Modal Emotion Recognition frontend.
+
+  This file defines utility scan paths and project-specific design tokens used
+  across dashboard, authentication, and analysis surfaces.
+*/
+
+// --- Tailwind Configuration ---
 module.exports = {
   // Tailwind scans the React source tree for utility classes.
   content: [
