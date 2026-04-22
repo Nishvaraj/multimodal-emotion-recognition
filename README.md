@@ -1,5 +1,9 @@
 # Multi-Modal Emotion Recognition
 
+<p align="center">
+	<img src="frontend/src/assets/logo-white-on-black.png" alt="MMER Project Logo" width="720" />
+</p>
+
 Multimodal emotion analysis app that predicts facial and speech emotions, compares the two modalities, and stores results in Supabase. The current deployment architecture uses a FastAPI backend on Hugging Face Spaces (Docker) and a React frontend on Vercel.
 
 ## Documentation And Sustainability
@@ -21,6 +25,18 @@ When the backend is running locally, the API docs are available at:
 These endpoints are generated from `backend/main.py` route definitions and should be treated as the canonical API contract for frontend/backend integration.
 
 Detailed documentation coverage across files is tracked in `docs/CODE_DOCUMENTATION.md`.
+
+### Key API Endpoints
+
+- `GET /`: service metadata.
+- `GET /health`: health check.
+- `GET /api/models/status`: model runtime/load status.
+- `POST /api/predict/facial`: facial image emotion inference.
+- `POST /api/predict/speech`: speech audio emotion inference.
+- `POST /api/predict/combined`: multimodal image + audio inference.
+- `POST /api/predict/video`: video inference (facial + extracted speech).
+- `GET /api/emotions/facial`: facial emotion label list.
+- `GET /api/emotions/speech`: speech emotion label list.
 
 ## What The Project Does
 
@@ -53,6 +69,13 @@ Detailed documentation coverage across files is tracked in `docs/CODE_DOCUMENTAT
 - `data/`: dataset notes and storage guidance.
 - `notebooks/`: training notebooks for facial and speech models.
 - `supabase_schema.sql` and `supabase_setup.sql`: database schema and setup scripts.
+
+## Prerequisites
+
+- Python 3.10+ (recommended) with a local `.venv` available.
+- Node.js 18+ and npm for the React frontend.
+- FFmpeg installed when using video/audio processing workflows locally.
+- Optional GPU + CUDA for faster backend inference.
 
 ## File Documentation Policy
 
@@ -122,20 +145,21 @@ npm start
 ### Hugging Face Spaces Backend (Docker)
 1. Use a Docker Space and include `Dockerfile`, `requirements.txt`, and backend source files.
 2. Keep the runtime command bound to the Space port (`7860`) in Docker runtime or startup script.
-3. Set `ENV=production`.
-4. Set `USE_GPU=false` unless the Space hardware includes GPU support.
-5. Set `PRELOAD_MODELS=false` for faster cold starts (or `true` for faster first inference).
-6. Set `FRONTEND_URL` to the Vercel domain.
-7. Optionally set `CORS_ORIGINS` to a comma-separated allowlist.
-8. Add `HF_TOKEN` in Space secrets for higher Hub rate limits and faster model downloads.
-9. Confirm the health endpoint responds at `/health`.
+3. You can use `start.sh` for production-style startup (Gunicorn + Uvicorn worker).
+4. Set `ENV=production`.
+5. Set `USE_GPU=false` unless the Space hardware includes GPU support.
+6. Set `PRELOAD_MODELS=false` for faster cold starts (or `true` for faster first inference).
+7. Set `FRONTEND_URL` to the Vercel domain.
+8. Optionally set `CORS_ORIGINS` to a comma-separated allowlist.
+9. Add `HF_TOKEN` in Space secrets for higher Hub rate limits and faster model downloads.
+10. Confirm the health endpoint responds at `/health`.
 
 ### Vercel Frontend
 1. Import the repository into Vercel.
 2. Set the root directory to `frontend`.
 3. Set `REACT_APP_API_BASE` to your Hugging Face Space backend URL.
 4. Configure the remaining frontend environment variables listed above.
-4. Deploy and open the generated Vercel URL.
+5. Deploy and open the generated Vercel URL.
 
 ### CORS Check
 - Prefer an explicit `CORS_ORIGINS` allowlist.
