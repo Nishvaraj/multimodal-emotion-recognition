@@ -16,8 +16,6 @@ This document tracks how documentation is provided across the MMER codebase from
   - Coverage: module docstring.
 - `backend/services/explainability.py`
   - Coverage: module docstring, section headers, algorithm rationale comments.
-- `backend/services/data_loader.py`
-  - Coverage: module docstring, dataset/transform comments.
 - `backend/services/__init__.py`
   - Coverage: module docstring.
 
@@ -33,8 +31,6 @@ This document tracks how documentation is provided across the MMER codebase from
   - Coverage: app mount comment.
 - `frontend/src/index.css`
   - Coverage: top-level styling scope comment and section markers.
-- `frontend/src/App.css`
-  - Coverage: top-level legacy-style scope comment and section markers.
 
 ## Deployment And Runtime
 
