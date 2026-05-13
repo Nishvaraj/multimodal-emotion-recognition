@@ -33,11 +33,13 @@ class _FakeModel:
 
     def __call__(self, pixel_values):
         logits = torch.zeros((pixel_values.shape[0], 8), dtype=torch.float32)
+        # Minimal mapping object that behaves like the processor batch returned by Hugging Face processors.
         return SimpleNamespace(logits=logits)
 
 
 class _AudioModel:
     def zero_grad(self):
+    # Fake audio model whose logits depend on the input so gradients can flow for saliency.
         return None
 
     def __call__(self, input_values):
@@ -48,6 +50,7 @@ class _AudioModel:
 
 # --- Given-When-Then: Grad-CAM Paths ---
 def test_vit_logits_wrapper_forward_returns_logits():
+    # The wrapper should unwrap the model output and expose the logits tensor directly.
     wrapped = explainability.ViTLogitsWrapper(_FakeModel())
     out = wrapped(torch.zeros((1, 3, 32, 32), dtype=torch.float32))
     assert isinstance(out, torch.Tensor)
@@ -55,6 +58,7 @@ def test_vit_logits_wrapper_forward_returns_logits():
 
 
 def test_generate_grad_cam_success(monkeypatch):
+    # Use an in-memory image so the test stays local and deterministic.
     image = Image.new("RGB", (64, 64), color=(120, 120, 120))
 
     processor = lambda img, return_tensors: _FakeBatch(
@@ -68,6 +72,7 @@ def test_generate_grad_cam_success(monkeypatch):
         def __call__(self, input_tensor, targets):
             return np.array([np.ones((8, 8), dtype=np.float32)])
 
+    # Force the Grad-CAM branch to succeed with a predictable heatmap.
     monkeypatch.setattr(explainability, "GradCAM", _GradCamOK)
 
     orig_b64, blend_b64 = explainability.generate_grad_cam(
@@ -84,6 +89,7 @@ def test_generate_grad_cam_success(monkeypatch):
 
 
 def test_generate_grad_cam_falls_back_to_eigen(monkeypatch):
+    # Use a different image size to show the helper handles arbitrary inputs.
     image = Image.new("RGB", (48, 48), color=(80, 80, 80))
 
     processor = lambda img, return_tensors: _FakeBatch(
@@ -104,6 +110,7 @@ def test_generate_grad_cam_falls_back_to_eigen(monkeypatch):
         def __call__(self, input_tensor):
             return np.array([np.ones((8, 8), dtype=np.float32)])
 
+    # Make Grad-CAM unusable so the implementation must use the EigenCAM fallback.
     monkeypatch.setattr(explainability, "GradCAM", _GradCamZero)
     monkeypatch.setattr(explainability, "EigenCAM", _EigenCamOK)
 
@@ -121,6 +128,7 @@ def test_generate_grad_cam_falls_back_to_eigen(monkeypatch):
 
 
 def test_generate_grad_cam_returns_none_on_total_failure(monkeypatch):
+    # This verifies the helper fails safely when both saliency strategies break.
     image = Image.new("RGB", (32, 32), color=(30, 30, 30))
 
     processor = lambda img, return_tensors: _FakeBatch(
@@ -141,6 +149,7 @@ def test_generate_grad_cam_returns_none_on_total_failure(monkeypatch):
         def __call__(self, input_tensor):
             raise RuntimeError("eigencam failed")
 
+    # Force both branches to fail so the outer exception handling is exercised.
     monkeypatch.setattr(explainability, "GradCAM", _GradCamFail)
     monkeypatch.setattr(explainability, "EigenCAM", _EigenCamFail)
 
@@ -159,7 +168,9 @@ def test_generate_grad_cam_returns_none_on_total_failure(monkeypatch):
 
 # --- Given-When-Then: Audio Saliency Paths ---
 def test_generate_audio_saliency_success(monkeypatch):
+    # Generate a waveform with fixed randomness so the test remains reproducible.
     audio = np.random.rand(1600).astype(np.float32)
+    # The processor only needs to return the input_values tensor used for gradients.
     processor = lambda audio, sampling_rate, return_tensors, padding: {
         "input_values": torch.ones((1, 160), dtype=torch.float32)
     }
@@ -194,6 +205,7 @@ def test_generate_audio_saliency_success(monkeypatch):
 
 
 def test_generate_audio_saliency_returns_none_for_empty_audio():
+    # The processor is unused in this failure path, but we keep the signature aligned with the real call.
     processor = lambda audio, sampling_rate, return_tensors, padding: {
         "input_values": torch.ones((1, 160), dtype=torch.float32)
     }
@@ -214,6 +226,7 @@ def test_generate_audio_saliency_returns_none_for_empty_audio():
 
 # --- Given-When-Then: Combined Visualization Paths ---
 def test_create_combined_visualization_success():
+    # Happy path: the helper should combine both base64 inputs into a non-empty output.
     combined = explainability.create_combined_visualization(
         grad_cam_base64="AAA",
         saliency_base64="BBB",
@@ -226,6 +239,7 @@ def test_create_combined_visualization_success():
 
 
 def test_create_combined_visualization_handles_exceptions(monkeypatch):
+    # Simulate a low-level encoding failure and ensure the wrapper returns None instead of raising.
     def _boom(*args, **kwargs):
         raise RuntimeError("encode failed")
 

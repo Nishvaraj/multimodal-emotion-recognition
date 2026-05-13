@@ -5,9 +5,15 @@
   UX, and research iteration can happen quickly. It coordinates multimodal inference
   requests, concordance interpretation, explainability rendering, and Supabase-backed
   history workflows for reproducible analysis sessions.
+
+  File map:
+  - shared helpers and score formatting
+  - facial, speech, and combined analysis tabs
+  - model info, auth, marketing, dashboard, and routing UI
 */
 
 // --- IMPORTS ---
+// React, router, API, PDF export, Supabase, and local asset imports.
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -17,6 +23,7 @@ import { saveAnalysisToSupabase, loadAnalysisHistoryFromSupabase, updateAnalysis
 import logoImage from './assets/logo.png';
 
 // --- MODEL + API CONSTANTS ---
+// Core model labels, backend URL, and audio duration limits used throughout the app.
 const EMOTIONS_FACIAL = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise'];
 const EMOTIONS_SPEECH = ['angry', 'calm', 'disgust', 'fearful', 'happy', 'neutral', 'sad', 'surprised'];
 const API_BASE = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:8000';
@@ -24,6 +31,7 @@ const MIN_AUDIO_SECONDS = 5;
 const RECOMMENDED_AUDIO_SECONDS = 10;
 
 // --- MEDIA + UI CONSTANTS ---
+// Supported recorder MIME types and shared button styles for capture flows.
 const AUDIO_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
 const VIDEO_MIME_CANDIDATES = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
 const BTN_PRIMARY = 'bg-gradient-to-br from-blue-700 to-blue-900 hover:from-blue-600 hover:to-blue-800 text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 hover:shadow-lg';
@@ -32,6 +40,7 @@ const BTN_DANGER = 'bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg 
 const BTN_NEUTRAL = 'bg-slate-700 hover:bg-slate-600 text-slate-100 px-4 py-2 rounded-lg font-medium transition-colors';
 
 // --- GENERIC HELPERS ---
+// Pick the first MediaRecorder MIME type the browser can actually record.
 function pickSupportedMimeType(candidates) {
   if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
     return '';
@@ -39,6 +48,7 @@ function pickSupportedMimeType(candidates) {
   return candidates.find((mime) => MediaRecorder.isTypeSupported(mime)) || '';
 }
 
+// Map recorder MIME strings to file extensions for saved clips.
 function getFileExtensionForMime(mimeType, fallback) {
   const mime = String(mimeType || '').toLowerCase();
   if (mime.includes('ogg')) return 'ogg';
@@ -48,6 +58,7 @@ function getFileExtensionForMime(mimeType, fallback) {
   return fallback;
 }
 
+// Read the duration of an uploaded audio file before allowing inference.
 function getAudioDurationSeconds(file) {
   return new Promise((resolve, reject) => {
     if (!file) {
@@ -74,6 +85,7 @@ function getAudioDurationSeconds(file) {
   });
 }
 
+// Normalize API error payloads into a single user-facing message.
 function getApiErrorMessage(err, fallback = 'Request failed') {
   if (err?.response?.data?.error) return String(err.response.data.error);
   if (err?.response?.data?.detail) return String(err.response.data.detail);
@@ -96,11 +108,13 @@ const CONCORDANCE_CATEGORY_THRESHOLD = {
 };
 
 // --- CONCORDANCE + METRIC HELPERS ---
+// Convert createdAt values into sortable timestamps for history and analytics.
 function parseRecordTimestamp(row) {
   const time = new Date(row?.createdAt || 0).getTime();
   return Number.isFinite(time) ? time : 0;
 }
 
+// Clamp concordance to a 1-100 range and support both percent and 10-point inputs.
 function normalizeConcordancePercent(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return 0;
@@ -110,6 +124,7 @@ function normalizeConcordancePercent(value) {
   return Math.max(1, Math.min(100, Math.round(numeric)));
 }
 
+// Pull concordance from a row object or a direct numeric value.
 function getConcordancePercent(rowOrValue) {
   if (rowOrValue && typeof rowOrValue === 'object') {
     const row = rowOrValue;
@@ -126,15 +141,18 @@ function getConcordancePercent(rowOrValue) {
   return normalizeConcordancePercent(rowOrValue);
 }
 
+// Backward-compatible alias used by charts and analytics code.
 function getConcordanceScore(rowOrValue) {
   return getConcordancePercent(rowOrValue);
 }
 
+// Convert percent concordance into a 0.1-10 scale for summary cards.
 function getConcordanceScore10(rowOrValue) {
   const percent = getConcordancePercent(rowOrValue);
   return Math.max(0.1, Math.min(10, Number((percent / 10).toFixed(1))));
 }
 
+// Classify concordance as Match, Partial Match, or Mismatch.
 function getConcordanceCategory(rowOrValue) {
   const score = getConcordanceScore10(rowOrValue);
   if (score >= CONCORDANCE_CATEGORY_THRESHOLD.matchMin) {
@@ -146,6 +164,7 @@ function getConcordanceCategory(rowOrValue) {
   return { key: 'MISMATCH', label: 'Mismatch' };
 }
 
+// Return all concordance metrics in one object for UI rendering.
 function getConcordanceMetrics(rowOrValue) {
   const percent = getConcordancePercent(rowOrValue);
   const score = getConcordanceScore10(percent);
@@ -158,17 +177,20 @@ function getConcordanceMetrics(rowOrValue) {
   };
 }
 
+// Format concordance for display in cards, tables, and export reports.
 function formatConcordanceValue(rowOrValue) {
   const metrics = getConcordanceMetrics(rowOrValue);
   return formatPercent(metrics.percent);
 }
 
+// Choose a tone token for concordance badges and status cards.
 function getConcordanceToneClass(categoryKey) {
   if (categoryKey === 'MATCH') return 'good';
   if (categoryKey === 'PARTIAL') return 'partial';
   return 'bad';
 }
 
+// Generate the plain-English explanation shown beside concordance results.
 function buildConcordanceExplainabilityText({ facialEmotion, speechEmotion, categoryLabel, score, percent }) {
   const faceText = formatEmotionLabel(facialEmotion || 'unknown');
   const speechText = formatEmotionLabel(speechEmotion || 'unknown');
@@ -187,6 +209,7 @@ function buildConcordanceExplainabilityText({ facialEmotion, speechEmotion, cate
   };
 }
 
+// Split combined emotion strings into their facial and speech components.
 function splitMultimodalEmotions(row) {
   if (!row?.emotion || !String(row.emotion).includes('|')) return null;
   const [facial, speech] = String(row.emotion).split('|').map((item) => item.trim().toLowerCase());
@@ -194,6 +217,7 @@ function splitMultimodalEmotions(row) {
   return { facial, speech };
 }
 
+// Extract individual labels from stored emotion strings for charting.
 function extractEmotionLabels(row) {
   const raw = String(row?.emotion || '').trim().toLowerCase();
   if (!raw) return [];
@@ -203,6 +227,7 @@ function extractEmotionLabels(row) {
     .filter((label) => label && label !== 'unknown' && label !== 'no-data');
 }
 
+// Convert model labels like happy_face into readable title case.
 function formatEmotionLabel(label) {
   if (!label || label === 'no-data') return 'No Data';
   return String(label)
@@ -213,15 +238,18 @@ function formatEmotionLabel(label) {
     .join(' ');
 }
 
+// Format a numeric percentage for progress bars and summary text.
 function formatPercent(value) {
   if (!Number.isFinite(value)) return '0%';
   return `${Math.round(value)}%`;
 }
 
+// Format a date as a compact day-month label for trend widgets.
 function formatDayMonth(dateObj) {
   return dateObj.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
 }
 
+// Collect the set of unique session dates used by streak calculations.
 function getSessionDatesSet(history) {
   const set = new Set();
   history.forEach((row) => {
@@ -233,6 +261,7 @@ function getSessionDatesSet(history) {
 }
 
 function buildHeatmapData(history) {
+  // Build a compact 12-week grid so the dashboard can render activity density by day.
   // Build a compact 12-week grid so the dashboard can render activity density by day.
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -277,6 +306,7 @@ function buildHeatmapData(history) {
 
 function buildWeeklyVolumeCounts(history) {
   // Count analyses per week for the volume chart in the dashboard.
+  // Count analyses per week for the volume chart in the dashboard.
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const start = new Date(now);
@@ -302,6 +332,7 @@ function buildWeeklyVolumeCounts(history) {
 
 function buildTrendSeries(history) {
   // Compute a rolling concordance trend so weekly changes are easy to compare.
+  // Compute a rolling concordance trend so weekly changes are easy to compare.
   const now = new Date();
   const points = Array.from({ length: 12 }, (_, i) => {
     const end = new Date(now);
@@ -320,6 +351,7 @@ function buildTrendSeries(history) {
 }
 
 function buildWeeklySeries(history, { metric = 'concordance', modality = 'all' } = {}) {
+  // Reuse one builder for concordance, confidence, and volume by switching the metric mode.
   // Reuse one builder for concordance, confidence, and volume by switching the metric mode.
   const scopedHistory = modality === 'all'
     ? history
@@ -359,6 +391,7 @@ function buildWeeklySeries(history, { metric = 'concordance', modality = 'all' }
 }
 
 // --- FACIAL EMOTION TAB ---
+// FacialTab handles still-image upload, webcam capture, inference, and explainability output.
 function FacialTab({ onResult, clearSignal = 0 }) {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -379,6 +412,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
 
   const clearCurrentAnalysis = () => {
     // Reset every piece of facial state so the next analysis starts from a blank slate.
+    // Reset every piece of facial state so the next analysis starts from a blank slate.
     setError(null);
     setShowGradCAM(false);
     setEmotion(null);
@@ -397,18 +431,21 @@ function FacialTab({ onResult, clearSignal = 0 }) {
   };
 
   useEffect(() => {
+    // Clear the tab whenever the parent bumps the reset signal.
     if (clearSignal > 0) {
       clearCurrentAnalysis();
     }
   }, [clearSignal]);
 
   useEffect(() => {
+    // Reattach the webcam stream only when live camera mode is active.
     if (isCameraOn && videoRef.current && cameraStreamRef.current) {
       videoRef.current.srcObject = cameraStreamRef.current;
     }
   }, [isCameraOn]);
 
   const processImageFile = (file) => {
+    // Convert a selected image into preview and analysis state.
     if (!file) {
       return;
     }
@@ -430,21 +467,25 @@ function FacialTab({ onResult, clearSignal = 0 }) {
   };
 
   const handleImageSelect = (e) => {
+    // File picker entry point for still images.
     // Convert the selected file into a previewable data URL while clearing stale results.
     processImageFile(e.target.files[0]);
   };
 
   const handleImageDragOver = (e) => {
+    // Highlight the drop zone while an image is dragged over it.
     e.preventDefault();
     setIsDraggingImage(true);
   };
 
   const handleImageDragLeave = (e) => {
+    // Remove the drag highlight once the pointer leaves the upload zone.
     e.preventDefault();
     setIsDraggingImage(false);
   };
 
   const handleImageDrop = (e) => {
+    // Accept dropped still images through the same processing path as uploads.
     e.preventDefault();
     setIsDraggingImage(false);
     processImageFile(e.dataTransfer?.files?.[0]);
@@ -452,6 +493,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
 
   const startCamera = async () => {
     try {
+      // Request camera access only when the user explicitly asks for it.
       // Request camera access only when the user explicitly asks for it.
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       cameraStreamRef.current = stream;
@@ -464,6 +506,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
 
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
+      // Snapshot the live camera frame into a blob for the backend.
       // Snapshot the live camera frame into a blob so the backend can analyze it like an upload.
       const ctx = canvasRef.current.getContext('2d');
       ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -478,6 +521,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
   };
 
   const stopCamera = () => {
+    // Stop the webcam stream and clear the live preview.
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
@@ -493,6 +537,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
       setError('Please select or capture an image');
       return;
     }
+    // Keep the upload and explainability request aligned with the checkbox state.
     // Keep the upload/explainability request aligned with the checkbox state.
     setLoading(true);
     setError(null);
@@ -539,7 +584,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* Left Column - Input */}
       <div className="space-y-4">
-        {/* Image Capture Card */}
+        {/* Image capture and upload entry point. */}
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
           <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
             <span className="text-blue-300 text-sm font-medium">Image Source</span>
@@ -618,7 +663,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
           </div>
         </div>
 
-        {/* Grad-CAM Checkbox */}
+        {/* Toggle Grad-CAM explainability for facial predictions. */}
         {imagePreview && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
             <label className="flex items-start gap-3 cursor-pointer group">
@@ -640,7 +685,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
           </div>
         )}
 
-        {/* Analyze Button */}
+        {/* Trigger facial inference once an image is ready. */}
         {imagePreview && (
           <button
             onClick={analyzeFacial}
@@ -660,13 +705,14 @@ function FacialTab({ onResult, clearSignal = 0 }) {
 
       {/* Right Column - Results */}
       <div className="space-y-4">
+        {/* Right column shows the prediction summary and explainability artifacts. */}
         {!emotion && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center">
             <p className="text-slate-400">Waiting for input...</p>
           </div>
         )}
 
-        {/* Confidence Scores */}
+        {/* Per-emotion confidence bars for the facial classifier. */}
         {emotion && probabilities && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
@@ -697,7 +743,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
           </div>
         )}
 
-        {/* Annotated Result */}
+        {/* Annotated face preview returned by the backend. */}
         {emotion && (annotatedImage || imagePreview) && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
@@ -719,7 +765,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
           </div>
         )}
 
-        {/* Grad-CAM Heatmap */}
+        {/* Grad-CAM heatmap when the backend produces one. */}
         {gradCam && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
@@ -743,6 +789,7 @@ function FacialTab({ onResult, clearSignal = 0 }) {
 }
 
 // --- SPEECH EMOTION TAB ---
+// SpeechTab handles audio upload, live microphone recording, and speech inference.
 function SpeechTab({ onResult, clearSignal = 0 }) {
   const [audioFile, setAudioFile] = useState(null);
   const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
@@ -763,6 +810,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
   const suppressRecordingOnStopRef = useRef(false);
 
   useEffect(() => {
+    // Revoke preview URLs when the audio source changes to avoid leaking blobs.
     return () => {
       if (audioPreviewUrl) {
         URL.revokeObjectURL(audioPreviewUrl);
@@ -772,6 +820,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
 
   const startRecording = async () => {
     try {
+      // Record from the microphone only after the user has granted permission.
       // Record from the microphone only after the user has granted permission.
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -816,6 +865,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
   };
 
   const clearCurrentAnalysis = () => {
+    // Reset audio state, output images, and confidence data.
     // Reset every multimodal result so the next run starts clean.
     setError(null);
     setShowSaliency(false);
@@ -836,12 +886,14 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
   };
 
   useEffect(() => {
+    // Clear the tab when the parent clears the active analysis.
     if (clearSignal > 0) {
       clearCurrentAnalysis();
     }
   }, [clearSignal]);
 
   const stopRecording = () => {
+    // Stop the microphone recorder and finalize the audio clip.
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
@@ -850,6 +902,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
   };
 
   const processAudioFile = async (file) => {
+    // Validate and load an audio file before it is sent for inference.
     if (!file) {
       return;
     }
@@ -887,20 +940,24 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
   };
 
   const handleAudioSelect = async (e) => {
+    // File picker entry point for audio uploads.
     await processAudioFile(e.target.files[0]);
   };
 
   const handleAudioDragOver = (e) => {
+    // Highlight the drop target while audio is dragged over it.
     e.preventDefault();
     setIsDraggingAudio(true);
   };
 
   const handleAudioDragLeave = (e) => {
+    // Remove the drag highlight when the pointer leaves the zone.
     e.preventDefault();
     setIsDraggingAudio(false);
   };
 
   const handleAudioDrop = async (e) => {
+    // Accept dropped audio files through the same validation flow.
     e.preventDefault();
     setIsDraggingAudio(false);
     await processAudioFile(e.dataTransfer?.files?.[0]);
@@ -911,6 +968,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
       setError('Please record or upload audio');
       return;
     }
+    // The explainability checkbox controls whether saliency is requested from the backend.
     // The explainability checkbox controls whether the saliency map is requested from the backend.
     setLoading(true);
     setError(null);
@@ -1048,7 +1106,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
           </div>
         </div>
 
-        {/* Saliency Checkbox */}
+        {/* Optional audio saliency toggle. */}
         {audioFile && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
             <label className="flex items-start gap-3 cursor-pointer group">
@@ -1071,6 +1129,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
         )}
 
         {audioFile && (
+          // Lightweight guidance for choosing better audio clips.
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-4">
             <h4 className="text-slate-50 font-semibold mb-2">Analysis Tips</h4>
             <ul className="text-slate-300 text-sm space-y-1">
@@ -1081,7 +1140,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
           </div>
         )}
 
-        {/* Analyze Button */}
+        {/* Run speech inference once an audio clip is ready. */}
         {audioFile && (
           <button
             onClick={analyzeSpeech}
@@ -1101,13 +1160,14 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
 
       {/* Right Column - Results */}
       <div className="space-y-4">
+        {/* Right column holds confidence, spectrogram, and saliency outputs. */}
         {!emotion && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-8 text-center">
             <p className="text-slate-400">Waiting for input...</p>
           </div>
         )}
 
-        {/* Confidence Scores */}
+        {/* Per-emotion confidence bars for the speech classifier. */}
         {emotion && probabilities && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
@@ -1138,7 +1198,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
           </div>
         )}
 
-        {/* Audio Spectrogram */}
+        {/* Spectrogram preview generated from the uploaded audio. */}
         {waveform && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
@@ -1158,7 +1218,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
           </div>
         )}
 
-        {/* Audio Saliency Map */}
+        {/* Saliency heatmap highlighting important frequencies. */}
         {saliency && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="bg-blue-900 px-4 py-2 flex items-center gap-2">
@@ -1183,6 +1243,7 @@ function SpeechTab({ onResult, clearSignal = 0 }) {
 }
 
 // --- COMBINED ANALYSIS TAB ---
+// CombinedTab coordinates separate-input and single-video multimodal workflows.
 function CombinedTab({ onResult, clearSignal = 0 }) {
   const [inputMode, setInputMode] = useState('separate');
   const [imageFile, setImageFile] = useState(null);
@@ -2345,6 +2406,7 @@ function CombinedTab({ onResult, clearSignal = 0 }) {
 }
 
 // --- MODEL INFORMATION TAB ---
+// ModelInfoTab fetches backend model metadata and displays version and accuracy details.
 function ModelInfoTab() {
   const [modelStatus, setModelStatus] = useState(null);
   const [statusError, setStatusError] = useState('');
@@ -2519,8 +2581,10 @@ function ModelInfoTab() {
 }
 
 // --- MAIN APP COMPONENT ---
+// Local storage key used to persist the signed-in user snapshot between reloads.
 const AUTH_STORAGE_KEY = 'mmer_auth_user';
 
+// Authentication screen for sign-in and sign-up flows.
 function AuthPage({ mode = 'login', onAuthSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -2650,6 +2714,7 @@ function AuthPage({ mode = 'login', onAuthSuccess }) {
   );
 }
 
+// Marketing/landing page shown before authentication.
 function MarketingPage({ authUser, onLogout }) {
   const navigate = useNavigate();
   // Open profile links in a secure new tab from marketing/footer actions.
@@ -3452,6 +3517,7 @@ function MarketingPage({ authUser, onLogout }) {
   );
 }
 
+// Small icon renderer used by the dashboard navigation and cards.
 function DashboardIcon({ name, className = '' }) {
   // Central icon switch keeps sidebar and cards visually consistent.
   const iconClass = `ga-glyph ${className}`.trim();
@@ -3548,6 +3614,7 @@ function DashboardIcon({ name, className = '' }) {
   }
 }
 
+// Simple KPI card for dashboard summary values.
 function KpiCard({ title, value, detail, detailClass = '' }) {
   // Reusable KPI tile used across overview metrics.
   return (
@@ -3559,6 +3626,7 @@ function KpiCard({ title, value, detail, detailClass = '' }) {
   );
 }
 
+// Heatmap card that visualizes usage density over time.
 function ActivityHeatmapCard({ heatmapData }) {
   // GitHub-style heatmap summarizing analysis activity by day/week.
   return (
@@ -3583,6 +3651,7 @@ function ActivityHeatmapCard({ heatmapData }) {
   );
 }
 
+// Trend card that summarizes session volume over time.
 function ActivityTrendCard({ history }) {
   const weeklyVolumes = useMemo(
     () => buildWeeklySeries(history, { metric: 'volume', modality: 'all' }),
@@ -3615,6 +3684,7 @@ function ActivityTrendCard({ history }) {
   );
 }
 
+// Small narrative card for generated coaching or research insights.
 function InsightCard({ icon, title, description }) {
   // Small narrative card for generated coaching/research insights.
   return (
@@ -3626,6 +3696,7 @@ function InsightCard({ icon, title, description }) {
   );
 }
 
+// Overview dashboard tab that combines key metrics, activity, and insights.
 function OverviewTab({ history, analytics }) {
   const {
     totalSessions,
@@ -3684,6 +3755,7 @@ function OverviewTab({ history, analytics }) {
   );
 }
 
+// Trends tab for line charts and aggregate comparisons.
 function EmotionTrendsTab({ analytics, history }) {
   const [selectedMetric, setSelectedMetric] = useState('concordance');
   const [selectedModality, setSelectedModality] = useState('all');
@@ -3783,6 +3855,7 @@ function EmotionTrendsTab({ analytics, history }) {
   );
 }
 
+// AI feedback tab for model-driven observations and helper text.
 function AIFeedbackTab({ analytics }) {
   const cards = analytics.feedbackCards;
   return (
@@ -3797,6 +3870,7 @@ function AIFeedbackTab({ analytics }) {
   );
 }
 
+// Compare sessions tab for cross-session concordance and modality differences.
 function CompareSessionsTab({ analytics, history }) {
   const [modalityFilter, setModalityFilter] = useState('all');
   const comparableSessions = useMemo(
@@ -3987,6 +4061,7 @@ function CompareSessionsTab({ analytics, history }) {
   );
 }
 
+// Export report tab for generating and downloading a summary PDF.
 function ExportReportTab({ onExportSummary, analytics }) {
   const avgConcordanceMetrics = getConcordanceMetrics(analytics.avgConcordance);
   return (
@@ -4007,6 +4082,7 @@ function ExportReportTab({ onExportSummary, analytics }) {
   );
 }
 
+// History tab for pinning, deleting, and annotating past sessions.
 function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
   const [draftNotes, setDraftNotes] = useState({});
 
@@ -4083,8 +4159,10 @@ function HistoryTab({ history, onTogglePin, onDelete, onUpdateNote }) {
   );
 }
 
+// Theme key keeps the UI locked to the app's supported visual mode.
 const THEME_STORAGE_KEY = 'mmer_theme';
 
+// Main authenticated dashboard shell with tabs, filters, and report actions.
 function DashboardConsole({ authUser, onLogout }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(3);
@@ -4874,6 +4952,7 @@ function DashboardConsole({ authUser, onLogout }) {
   );
 }
 
+// Prevent logged-in users from reopening login/signup routes.
 function PublicOnlyRoute({ isAuthenticated, children }) {
   const location = useLocation();
   // Prevent logged-in users from reopening login/signup routes.
@@ -4883,6 +4962,7 @@ function PublicOnlyRoute({ isAuthenticated, children }) {
   return children;
 }
 
+// Block private routes unless a valid auth session exists.
 function ProtectedRoute({ isAuthenticated, children }) {
   const location = useLocation();
   // Block private routes unless a valid auth session exists.
@@ -4892,6 +4972,7 @@ function ProtectedRoute({ isAuthenticated, children }) {
   return children;
 }
 
+// Route map for marketing, auth, and protected dashboard areas.
 function AppRouter() {
   const navigate = useNavigate();
   const [authUser, setAuthUser] = useState(null);
@@ -5011,6 +5092,7 @@ function AppRouter() {
   );
 }
 
+// Top-level router wrapper.
 function App() {
   // Top-level router wrapper.
   return (

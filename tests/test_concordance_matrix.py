@@ -17,6 +17,7 @@ from pathlib import Path
 
 
 # --- Deterministic Test Fixtures ---
+# The facial and speech label sets are fixed so the test always evaluates the same 56 pairs.
 FER2013_LABELS = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
 RAVDESS_LABELS = ["angry", "calm", "disgust", "fearful", "happy", "neutral", "sad", "surprised"]
 
@@ -46,11 +47,13 @@ RAVDESS_CONFIDENCE = {
 # --- Helper Functions ---
 def _load_calculate_concordance():
     """Load _calculate_concordance from backend/main.py without importing heavy runtime dependencies."""
+    # Parse the backend source and extract only the target function so the test stays fast and isolated.
     backend_main = Path(__file__).resolve().parents[1] / "backend" / "main.py"
     source = backend_main.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(backend_main))
 
     target = None
+    # Find the exact function definition we want to execute in isolation.
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name == "_calculate_concordance":
             target = node
@@ -68,6 +71,7 @@ def _load_calculate_concordance():
 
 def _oracle_concordance(facial_emotion, speech_emotion, facial_confidence, speech_confidence):
     """Independent oracle mirroring the documented deterministic concordance policy."""
+    # When both modalities agree, the average confidence determines the label.
     if facial_emotion == speech_emotion:
         score = (facial_confidence + speech_confidence) / 2
         if score > 0.7:
@@ -77,6 +81,7 @@ def _oracle_concordance(facial_emotion, speech_emotion, facial_confidence, speec
         else:
             concordance = "MISMATCH"
     else:
+        # When the labels disagree, confidence distance determines whether the result is partial or mismatch.
         score = 1 - abs(facial_confidence - speech_confidence)
         if score >= 0.5:
             concordance = "PARTIAL"
@@ -88,6 +93,7 @@ def _oracle_concordance(facial_emotion, speech_emotion, facial_confidence, speec
 
 # --- Given-When-Then Validation ---
 def test_calculate_concordance_all_56_label_combinations():
+    # Load the backend implementation once, then compare it against the independent oracle for every pair.
     calculate_concordance = _load_calculate_concordance()
 
     results = []
@@ -100,8 +106,10 @@ def test_calculate_concordance_all_56_label_combinations():
             expected = _oracle_concordance(facial_label, speech_label, facial_conf, speech_conf)
             assert actual == expected
 
+            # Capture each row so the matrix can be printed for quick manual inspection when the test runs.
             results.append((facial_label, speech_label, facial_conf, speech_conf, actual[0], actual[1]))
 
+    # Print the full matrix so failures can be compared against the expected policy at a glance.
     print("FER2013 x RAVDESS concordance matrix (56 combinations)")
     print("facial\tspeech\tf_conf\ts_conf\tconcordance\tscore")
     for row in results:
@@ -110,6 +118,7 @@ def test_calculate_concordance_all_56_label_combinations():
             f"{facial_label}\t{speech_label}\t{facial_conf:.2f}\t{speech_conf:.2f}\t{concordance}\t{score}"
         )
 
+    # Sanity checks ensure the matrix covers every pairing and exercises all three outcomes.
     assert len(results) == 56
     assert any(row[4] == "MATCH" for row in results)
     assert any(row[4] == "PARTIAL" for row in results)

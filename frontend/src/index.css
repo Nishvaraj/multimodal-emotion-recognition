@@ -223,12 +223,14 @@ code {
   font-size: 13px;
 }
 
+/* --- Module: AUTH FOOTER / SWITCHER --- */
 .ga-auth-footer-text {
   margin-top: 4px;
   font-size: 13px;
   color: var(--sb-text-soft);
 }
 
+/* --- Module: MARKETING / LANDING SURFACES --- */
 /* Marketing */
 .mmer-marketing {
   min-height: 100vh;
@@ -236,6 +238,7 @@ code {
   color: var(--sb-text);
 }
 
+/* Landing header and logo grouping. */
 .mmer-logo-wrap {
   display: flex;
   align-items: center;
@@ -266,6 +269,7 @@ code {
   margin-bottom: 16px;
 }
 
+/* Hero copy and main CTA area. */
 .mmer-hero {
   text-align: center;
   padding: 40px 32px 34px;
@@ -313,6 +317,7 @@ code {
   margin: 0;
 }
 
+/* Feature cards and stat blocks use the same grid rhythm. */
 .mmer-feature-grid,
 .mmer-stat-grid {
   display: grid;
@@ -417,7 +422,7 @@ code {
   text-align: center;
 }
 
-/** Dashboard shell */
+/* --- Module: DASHBOARD SHELL --- */
 .ga-layout {
   min-height: 100vh;
   display: grid;
@@ -425,6 +430,7 @@ code {
   background: var(--sb-bg);
 }
 
+/* Sidebar holds branding, nav groups, and profile actions. */
 .ga-sidebar {
   background: linear-gradient(180deg, rgba(20, 26, 46, 0.8) 0%, rgba(10, 14, 26, 0.9) 100%);
   backdrop-filter: blur(10px);
@@ -761,6 +767,7 @@ html[data-theme='light'] .ga-brand-logo {
   letter-spacing: -0.01em;
 }
 
+/* Shared input styling for search, date filters, and notes. */
 .ga-search,
 .ga-date,
 .ga-note-input {
@@ -801,6 +808,8 @@ html[data-theme='light'] .ga-brand-logo {
   gap: 10px;
 }
 
+/* --- Module: DASHBOARD HEADER + ACTION BAR --- */
+/* This toolbar keeps the common dashboard actions grouped in one place. */
 .ga-live-session-btn {
   height: 38px;
   border: 1px solid rgba(29, 78, 216, 0.42);
@@ -984,6 +993,7 @@ html[data-theme='light'] .ga-brand-logo {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Cards and KPI tiles share the same hover lift effect. */
 .ga-card:hover,
 .ga-kpi-card:hover {
   transform: translateY(-4px);
@@ -1085,6 +1095,7 @@ html[data-theme='light'] .ga-brand-logo {
   color: #f87171;
 }
 
+/* Main overview visualizations and activity summaries. */
 .ga-chart-grid {
   display: grid;
   grid-template-columns: 2fr 1fr;
@@ -1885,6 +1896,8 @@ html[data-theme='light'] .ga-feedback-card {
   box-shadow: 0 4px 12px rgba(15, 23, 40, 0.08);
 }
 
+/* --- Module: LIGHT THEME DASHBOARD OVERRIDES --- */
+/* Light mode swaps darker panels for brighter surfaces without changing layout. */
 html[data-theme='light'] .ga-tab-shell {
   background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
 }
@@ -1960,6 +1973,7 @@ select {
   animation: fadeInUp 0.35s ease;
 }
 
+/* Responsive layout adjustments keep the shell usable on smaller screens. */
 @media (max-width: 1200px) {
   .ga-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2096,6 +2110,7 @@ select {
   }
 }
 
+/* Respect user motion preferences by reducing animation intensity. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2111,6 +2126,7 @@ select {
   outline-offset: 2px;
 }
 
+/* Decorative motion effects used by the landing page visuals. */
 @keyframes pulse-glow {
   0%,
   100% {
@@ -2241,6 +2257,7 @@ select {
 }
 
 /* Unified MMER visual language across auth + dashboard + landing */
+/* Theme-specific overrides below keep the same UI readable in both modes. */
 html:not([data-theme='light']) .ga-login {
   background: #060d16;
 }
@@ -2308,6 +2325,7 @@ html:not([data-theme='light']) .ga-brand-subtitle {
   text-align: center;
 }
 
+/* --- Module: DARK THEME DASHBOARD OVERRIDES --- */
 html:not([data-theme='light']) .ga-nav-label {
   color: #8ab0d2;
 }
