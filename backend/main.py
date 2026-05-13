@@ -230,15 +230,6 @@ MAX_SPEECH_INFER_SECONDS = int(os.getenv('MAX_SPEECH_INFER_SECONDS', '15'))
 # Shorter window for explainability because saliency is more expensive.
 MAX_SPEECH_XAI_SECONDS = int(os.getenv('MAX_SPEECH_XAI_SECONDS', '8'))
 
-# This mapping is currently not used by _calculate_concordance.
-# It can be kept for UI fallback or future hard-coded score display logic.
-CONCORDANCE_SCORE_MAP = {
-    'MATCH': 100,
-    'PARTIAL': 65,
-    'MISMATCH': 30,
-    'UNKNOWN': 0,
-}
-
 
 # =============================================================================
 # In-Memory Model State
@@ -751,16 +742,7 @@ def predict_facial_emotion(image: Image.Image, generate_explainability: bool = F
         if face_box is not None:
             x, y, w, h = _shrink_box(face_box, shrink_ratio=0.08)
             cv2.rectangle(annotated, (x, y), (x + w, y + h), (255, 128, 0), 2)
-            cv2.putText(
-                annotated,
-                'Face detected',
-                (x, max(20, y - 8)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 128, 0),
-                2,
-                cv2.LINE_AA
-            )
+            cv2.putText(annotated, 'Face detected', (x, max(20, y - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 128, 0), 2, cv2.LINE_AA)
 
         # Convert PIL image into model-ready tensor using the ViT processor.
         inputs = facial_processor(model_image, return_tensors='pt').to(DEVICE)
