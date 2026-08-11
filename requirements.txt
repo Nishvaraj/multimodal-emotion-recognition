@@ -26,7 +26,9 @@ opencv-python-headless>=4.10.0,<5
 pillow>=10.4.0
 
 # Deep Learning
-numpy>=1.26.0
+# Pinned below 2.5: numba (pulled in by librosa) refuses to import
+# against numpy>=2.5, crashing the app at startup.
+numpy>=1.26.0,<2.5
 scipy>=1.14.0
 scikit-learn>=1.5.0
 
