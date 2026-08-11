@@ -20,7 +20,9 @@ soundfile>=0.12.1
 pydub>=0.25.1
 
 # Computer Vision
-opencv-python-headless>=4.10.0
+# Pinned below 5.0: OpenCV 5.0.0 removed cv2.CascadeClassifier from the
+# top-level namespace, which breaks Haar face detection in backend/main.py.
+opencv-python-headless>=4.10.0,<5
 pillow>=10.4.0
 
 # Deep Learning
