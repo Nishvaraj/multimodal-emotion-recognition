@@ -8,7 +8,10 @@ python-multipart>=0.0.6
 torch>=2.6.0
 torchvision>=0.20.0
 torchaudio>=2.6.0
-transformers>=4.46.0
+# Pinned below 5.0: transformers 5.x removed ViTModel.encoder, breaking the
+# Grad-CAM explainability code in backend/services/explainability.py, which
+# accesses model.vit.encoder.layer[...] directly.
+transformers>=4.46.0,<5
 timm>=1.0.0
 
 # Face Detection
