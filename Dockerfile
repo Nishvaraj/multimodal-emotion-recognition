@@ -14,8 +14,8 @@ WORKDIR /app
 
 COPY --chown=user requirements.txt .
 RUN pip install --no-cache-dir --timeout=300 --retries=5 -r requirements.txt
-RUN pip uninstall -y opencv-python || true
-RUN pip install --no-cache-dir --timeout=300 --force-reinstall opencv-python-headless>=4.10.0
+RUN pip uninstall -y opencv-python opencv-python-headless || true
+RUN pip install --no-cache-dir --timeout=300 --force-reinstall "opencv-python-headless>=4.10.0"
 
 COPY --chown=user . .
 
